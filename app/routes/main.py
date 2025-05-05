@@ -5,4 +5,4 @@ main_bp = Blueprint('main', __name__)
 
 @main_bp.route('/')
 def index():
-    return render_template('index.html', map_api_key=Config.MAP_API_KEY)
+    return render_template('index.html', foursquare_api_key=Config.FOURSQUARE_API_KEY)
