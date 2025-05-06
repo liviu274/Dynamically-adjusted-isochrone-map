@@ -68,6 +68,119 @@ def get_isochrones(origin_lat, origin_lng, travel_times=[5, 10, 15], travel_mode
             "status": "error",
             "message": f"Exception: {str(e)}"
         }
+        
+        
+from datetime import datetime
+from typing import Dict, List, Optional
+
+class TravelTimeProcessor:
+    """Process and normalize travel time data"""
+    
+    def __init__(self):
+        self.valid_modes = ['driving-car', 'cycling-regular', 'foot-walking']
+        self.min_valid_duration = 0
+        self.max_valid_duration = 24 * 60 * 60  # 24 hours in seconds
+
+    def normalize_travel_times(self, raw_data: Dict) -> Dict:
+        """
+        Normalize and validate travel time data
+        Args:
+            raw_data: Raw response from travel time service
+        Returns:
+            Normalized and validated data
+        """
+        if raw_data.get('status') != 'success':
+            return self._handle_error_response(raw_data)
+
+        normalized_data = {
+            'status': 'success',
+            'metadata': self._create_metadata(),
+            'origin': self._validate_coordinates(raw_data.get('origin')),
+            'results': []
+        }
+
+        for result in raw_data.get('results', []):
+            processed_result = self._process_single_result(result)
+            if processed_result:
+                normalized_data['results'].append(processed_result)
+
+        normalized_data['statistics'] = self._calculate_statistics(normalized_data['results'])
+        return normalized_data
+
+    def _process_single_result(self, result: Dict) -> Optional[Dict]:
+        """Process and validate a single travel time result"""
+        if not self._is_valid_result(result):
+            return None
+
+        return {
+            'destination': self._validate_coordinates(result.get('destination')),
+            'duration': {
+                'seconds': result.get('duration_seconds'),
+                'minutes': round(result.get('duration_seconds', 0) / 60, 2),
+                'formatted': self._format_duration(result.get('duration_seconds', 0))
+            },
+            'reliability_score': self._calculate_reliability(result)
+        }
+
+    def _is_valid_result(self, result: Dict) -> bool:
+        """Check if a result is valid"""
+        duration = result.get('duration_seconds')
+        return (
+            isinstance(duration, (int, float)) and
+            self.min_valid_duration <= duration <= self.max_valid_duration and
+            result.get('destination') is not None
+        )
+
+    def _validate_coordinates(self, coords: Dict) -> Dict:
+        """Validate and format coordinates"""
+        if not coords or 'lat' not in coords or 'lng' not in coords:
+            return {'lat': None, 'lng': None, 'valid': False}
+
+        return {
+            'lat': float(coords['lat']),
+            'lng': float(coords['lng']),
+            'valid': True
+        }
+
+    def _format_duration(self, seconds: int) -> str:
+        """Format duration into human-readable string"""
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        if hours > 0:
+            return f"{hours}h {minutes}m"
+        return f"{minutes}m"
+
+    def _calculate_reliability(self, result: Dict) -> float:
+        """Calculate reliability score for a result"""
+        score = 1.0
+        if not result.get('duration_seconds'):
+            score *= 0.5
+        if not self._validate_coordinates(result.get('destination', {}))['valid']:
+            score *= 0.7
+        return round(score, 2)
+
+    def _create_metadata(self) -> Dict:
+        """Create metadata for the response"""
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'version': '1.0',
+            'processor': 'TravelTimeProcessor'
+        }
+
+    def _calculate_statistics(self, results: List[Dict]) -> Dict:
+        """Calculate statistics for all results"""
+        durations = [r['duration']['seconds'] for r in results if r['duration']['seconds']]
+        if not durations:
+            return {'count': 0}
+
+        return {
+            'count': len(durations),
+            'average_duration_minutes': round(sum(durations) / len(durations) / 60, 2),
+            'min_duration_minutes': round(min(durations) / 60, 2),
+            'max_duration_minutes': round(max(durations) / 60, 2)
+        }
+
+
 
 def get_travel_times(origin_lat, origin_lng, destinations=None):
     """
@@ -122,23 +235,26 @@ def get_travel_times(origin_lat, origin_lng, destinations=None):
         if response.status_code == 200:
             matrix_data = response.json()
             
-            # Format the response to include destination info
-            results = []
+            # Format the basic response
+            raw_results = {
+                "status": "success",
+                "origin": {"lat": origin_lat, "lng": origin_lng},
+                "results": []
+            }
             durations = matrix_data.get('durations', [[]])[0]
             
             for i, duration in enumerate(durations):
                 if i < len(destinations):
-                    results.append({
+                    raw_results["results"].append({
                         "destination": destinations[i],
                         "duration_seconds": duration,
                         "duration_minutes": round(duration / 60, 1)
                     })
             
-            return {
-                "status": "success",
-                "origin": {"lat": origin_lat, "lng": origin_lng},
-                "results": results
-            }
+             # Use the processor to normalize data
+            processor = TravelTimeProcessor()
+            return processor.normalize_travel_times(raw_results)
+        
         else:
             return {
                 "status": "error",
@@ -150,3 +266,4 @@ def get_travel_times(origin_lat, origin_lng, destinations=None):
             "status": "error",
             "message": f"Exception: {str(e)}"
         }
+        
