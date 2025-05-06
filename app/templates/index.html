@@ -124,6 +124,23 @@
             margin-bottom: 1rem;
             box-shadow: var(--glow);
         }
+        
+        /* Add custom styling for travel time button */
+        .btn-travel-time {
+            background: var(--neon-secondary);
+            color: var(--text-primary);
+            border: none;
+            border-radius: 8px;
+            padding: 5px 10px;
+            margin-top: 8px;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-travel-time:hover {
+            background: var(--neon-primary);
+            box-shadow: 0 0 10px rgba(0, 255, 163, 0.5);
+        }
     </style>
 </head>
 <body>
@@ -214,6 +231,53 @@
         setTimeout(() => toast.remove(), 3000);
     };
 
+    // Function to fetch and display isochrones
+    const fetchAndDisplayIsochrones = (lat, lng) => {
+        fetch(`/api/isochrones?origin_lat=${lat}&origin_lng=${lng}`)
+            .then(response => response.json())
+            .then(data => {
+                // Clear existing isochrones
+                clearIsochrones();
+                
+                // Add isochrones to map
+                if (data.type === 'FeatureCollection' && data.features) {
+                    data.features.forEach(feature => {
+                        const color = feature.properties.color || '#0088ff';
+                        const isoLayer = L.geoJSON(feature, {
+                            style: {
+                                color: color,
+                                fillColor: color,
+                                fillOpacity: 0.2,
+                                weight: 2,
+                                opacity: 0.7
+                            }
+                        }).addTo(map);
+                        
+                        // Add tooltip with time information
+                        const timeMinutes = feature.properties.time_minutes || Math.round(feature.properties.value / 60);
+                        isoLayer.bindTooltip(`${timeMinutes} minutes`, {
+                            permanent: false,
+                            direction: 'center'
+                        });
+                        
+                        // Store for later removal
+                        isochroneLayers.push(isoLayer);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching isochrones:', error);
+                showToast('Failed to load travel times. Please try again.');
+            });
+    };
+    
+    // Clear isochrones
+    const isochroneLayers = [];
+    const clearIsochrones = () => {
+        isochroneLayers.forEach(layer => map.removeLayer(layer));
+        isochroneLayers.length = 0;
+    };
+
     map.on('click', (e) => {
         const { lat, lng } = e.latlng;
         document.getElementById('poi-latitude').value = lat;
@@ -236,6 +300,12 @@
         selectedMarker = L.marker([lat, lng]).addTo(map).bindPopup("Selected location").openPopup();
     });
 
+    // Add context menu for right-click on map
+    map.on('contextmenu', function(e) {
+        clearIsochrones();
+        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
+    });
+
     document.getElementById('time-range').addEventListener('input', function () {
         document.getElementById('time-val').textContent = this.value;
     });
@@ -252,8 +322,37 @@
         const minutes = parseInt(document.getElementById('time-range').value);
         const radius = minutes * 100;
 
+        // Create popup content with travel time button
+        const popupContent = `
+            <div>
+                <strong>${name}</strong><br>
+                <small>${category}</small><br>
+                ${desc}
+                <div class="mt-2">
+                    <button class="btn-travel-time travel-time-btn" data-lat="${lat}" data-lng="${lng}">
+                        <i class="bi bi-clock-fill me-1"></i>Show Travel Times
+                    </button>
+                </div>
+            </div>
+        `;
+
         const marker = L.marker([lat, lng]).addTo(map)
-            .bindPopup(`<strong>${name}</strong><br><small>${category}</small><br>${desc}`);
+            .bindPopup(popupContent);
+            
+        // Add event listener to the popup content after it's opened
+        marker.on('popupopen', function() {
+            setTimeout(() => {
+                const travelTimeBtn = document.querySelector('.travel-time-btn');
+                if (travelTimeBtn) {
+                    travelTimeBtn.addEventListener('click', function() {
+                        const btnLat = parseFloat(this.getAttribute('data-lat'));
+                        const btnLng = parseFloat(this.getAttribute('data-lng'));
+                        fetchAndDisplayIsochrones(btnLat, btnLng);
+                    });
+                }
+            }, 100);
+        });
+            
         markers.push(marker);
 
         if (isochroneCircle) map.removeLayer(isochroneCircle);
@@ -321,6 +420,18 @@
             if (!e.target.closest('button')) {
                 map.setView([lat, lng], 16);
                 marker.openPopup();
+                
+                // Add event listener for the travel time button after the popup is opened
+                setTimeout(() => {
+                    const travelTimeBtn = document.querySelector('.travel-time-btn');
+                    if (travelTimeBtn) {
+                        travelTimeBtn.addEventListener('click', function() {
+                            const btnLat = parseFloat(this.getAttribute('data-lat'));
+                            const btnLng = parseFloat(this.getAttribute('data-lng'));
+                            fetchAndDisplayIsochrones(btnLat, btnLng);
+                        });
+                    }
+                }, 100);
             }
         });
 

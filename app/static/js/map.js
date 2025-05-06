@@ -322,28 +322,30 @@ function viewPOI(poiId) {
         // Open the popup
         marker.openPopup();
         
-        // Get the marker position
-        const position = marker.getLatLng();
-
-        // Add a timeout to ensure the popup is fully rendered before adding the button
+        // Add travel times functionality
         setTimeout(() => {
-            // Find the popup content container
-            const container = document.querySelector(`.info-window[data-poi-id="${poiId}"]`);
-            if (container) {
-                // Create the button
-                const showIsochronesBtn = document.createElement('button');
-                showIsochronesBtn.className = 'btn btn-sm btn-info mt-2';
-                showIsochronesBtn.textContent = 'Show Travel Times';
-                
-                // Add event listener to call the API
-                showIsochronesBtn.addEventListener('click', () => {
-                    fetchAndDisplayIsochrones(position.lat, position.lng);
-                });
-                
-                // Append the button to the popup content
-                container.appendChild(showIsochronesBtn);
-            }
-        }, 100); // Short timeout to ensure popup is rendered
+            // Get the POI data to access properties
+            fetch(`/api/pois/${poiId}`)
+                .then(response => response.json())
+                .then(poi => {
+                    // Show isochrones
+                    clearIsochrones();
+                    fetchAndDisplayIsochrones(poi.latitude, poi.longitude);
+                    
+                    // Add travel time button if not already present
+                    const popupContent = document.querySelector('.leaflet-popup-content');
+                    if (popupContent && !popupContent.querySelector('.travel-time-btn')) {
+                        const travelTimeBtn = document.createElement('button');
+                        travelTimeBtn.className = 'btn btn-sm btn-info mt-2 travel-time-btn';
+                        travelTimeBtn.innerHTML = 'Show Travel Times';
+                        travelTimeBtn.addEventListener('click', () => {
+                            fetchAndDisplayIsochrones(poi.latitude, poi.longitude);
+                        });
+                        popupContent.appendChild(travelTimeBtn);
+                    }
+                })
+                .catch(error => console.error('Error fetching POI:', error));
+        }, 300);
     }
 }
 
