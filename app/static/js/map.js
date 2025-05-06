@@ -4,6 +4,7 @@ let selectedMarker = null;
 let currentPopup = null;
 let editMode = false;
 let markersVisible = true;
+let isochroneLayers = []; // To store isochrone layers
 
 // Initialize the map
 function initMap() {
@@ -73,6 +74,15 @@ function initMap() {
             toggle.checked = isVisible;
         });
     });
+    
+    // Add context menu for right-click on map
+    map.on('contextmenu', function(e) {
+        // Clear existing isochrones
+        clearIsochrones();
+        
+        // Fetch and display isochrones from clicked location
+        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
+    });
 }
 
 // Load points of interest from the API
@@ -111,10 +121,9 @@ function addMarkerForPOI(poi) {
         marker.addTo(map);
     }
     
-    // Rest of the function remains the same...
     // Create popup content
     const popupContent = `
-        <div class="info-window">
+        <div class="info-window" data-poi-id="${poi.id}">
             <h5>${poi.name}</h5>
             <p>${poi.description || 'No description'}</p>
             <p><strong>Category:</strong> ${poi.category || 'Uncategorized'}</p>
@@ -143,6 +152,19 @@ function addMarkerForPOI(poi) {
                 deletePOI(poi.id);
                 marker.closePopup();
             });
+            
+            // Add a new button to show isochrones from this POI
+            const showIsochronesBtn = document.createElement('button');
+            showIsochronesBtn.className = 'btn btn-sm btn-info mt-2';
+            showIsochronesBtn.textContent = 'Show Travel Times';
+            showIsochronesBtn.addEventListener('click', () => {
+                fetchAndDisplayIsochrones(poi.latitude, poi.longitude);
+            });
+            
+            const infoWindow = document.querySelector(`.info-window[data-poi-id="${poi.id}"]`);
+            if (infoWindow) {
+                infoWindow.appendChild(showIsochronesBtn);
+            }
         }, 100);
     });
     
@@ -414,6 +436,180 @@ function filterPOIs() {
         .catch(error => console.error('Error filtering POIs:', error));
 }
 
+// Clear all isochrone layers
+function clearIsochrones() {
+    isochroneLayers.forEach(layer => map.removeLayer(layer));
+    isochroneLayers = [];
+}
+
+// Fetch and display isochrones
+function fetchAndDisplayIsochrones(lat, lng) {
+    // Show loading message
+    console.log("Fetching isochrones for", lat, lng);
+    
+    // Fetch isochrones from API
+    fetch(`/api/isochrones?origin_lat=${lat}&origin_lng=${lng}`)
+        .then(response => response.json())
+        .then(data => {
+            // Check if we got valid GeoJSON
+            if (data.type === 'FeatureCollection' && data.features) {
+                // Clear existing isochrones
+                clearIsochrones();
+                
+                // Add temporary marker at isochrone center
+                const centerMarker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: 'isochrone-center-marker',
+                        html: '<div style="background-color: red; width: 10px; height: 10px; border-radius: 50%;"></div>',
+                        iconSize: [10, 10],
+                        iconAnchor: [5, 5]
+                    })
+                }).addTo(map);
+                isochroneLayers.push(centerMarker);
+                
+                // Add each isochrone to the map
+                data.features.forEach(feature => {
+                    // Create and style the layer
+                    const color = feature.properties.color || '#2c7bb6';
+                    const isoLayer = L.geoJSON(feature, {
+                        style: function() {
+                            return {
+                                color: color,
+                                fillColor: color,
+                                fillOpacity: 0.2,
+                                weight: 2,
+                                opacity: 0.7
+                            };
+                        }
+                    }).addTo(map);
+                    
+                    // Add tooltip with time information
+                    const timeMinutes = feature.properties.time_minutes || Math.round(feature.properties.value / 60);
+                    isoLayer.bindTooltip(`${timeMinutes} minutes`, {
+                        permanent: false,
+                        direction: 'center',
+                        className: 'isochrone-tooltip'
+                    });
+                    
+                    // Store for later removal
+                    isochroneLayers.push(isoLayer);
+                });
+                
+                // Fit map to the isochrones
+                if (isochroneLayers.length > 0) {
+                    const group = L.featureGroup(isochroneLayers);
+                    map.fitBounds(group.getBounds());
+                }
+            } else {
+                console.error('Invalid isochrone data:', data);
+                
+                if (data.message) {
+                    alert('Error getting isochrones: ' + data.message);
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching isochrones:', error);
+            alert('Failed to load isochrones. Please check your API key and try again.');
+        });
+}
+
+// Show/hide loading indicator
+function showLoading(show) {
+    let loader = document.getElementById('map-loader');
+    
+    if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'map-loader';
+        loader.className = 'map-loader';
+        loader.innerHTML = '<div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div>';
+        loader.style.position = 'absolute';
+        loader.style.top = '50%';
+        loader.style.left = '50%';
+        loader.style.transform = 'translate(-50%, -50%)';
+        loader.style.zIndex = '1000';
+        loader.style.display = 'none';
+        
+        document.querySelector('.map-container').appendChild(loader);
+    }
+    
+    loader.style.display = show ? 'block' : 'none';
+}
+
+// Add legend for isochrones
+function addIsochroneLegend(features) {
+    // Remove existing legend
+    const existingLegend = document.querySelector('.isochrone-legend');
+    if (existingLegend) {
+        existingLegend.remove();
+    }
+    
+    // Create new legend
+    const legend = document.createElement('div');
+    legend.className = 'isochrone-legend';
+    legend.style.position = 'absolute';
+    legend.style.bottom = '20px';
+    legend.style.right = '20px';
+    legend.style.backgroundColor = 'white';
+    legend.style.padding = '10px';
+    legend.style.borderRadius = '5px';
+    legend.style.boxShadow = '0 1px 5px rgba(0,0,0,0.4)';
+    legend.style.zIndex = '1000';
+    
+    // Add title
+    const title = document.createElement('div');
+    title.textContent = 'Travel Time';
+    title.style.fontWeight = 'bold';
+    title.style.marginBottom = '5px';
+    legend.appendChild(title);
+    
+    // Sort features by time (ascending)
+    features.sort((a, b) => {
+        const timeA = a.properties.time_minutes || Math.round(a.properties.value / 60);
+        const timeB = b.properties.time_minutes || Math.round(b.properties.value / 60);
+        return timeA - timeB;
+    });
+    
+    // Add items
+    features.forEach(feature => {
+        const timeMinutes = feature.properties.time_minutes || Math.round(feature.properties.value / 60);
+        const color = feature.properties.color || '#2c7bb6';
+        
+        const item = document.createElement('div');
+        item.style.display = 'flex';
+        item.style.alignItems = 'center';
+        item.style.marginBottom = '5px';
+        
+        const colorBox = document.createElement('div');
+        colorBox.style.width = '15px';
+        colorBox.style.height = '15px';
+        colorBox.style.backgroundColor = color;
+        colorBox.style.marginRight = '5px';
+        
+        const label = document.createElement('span');
+        label.textContent = `${timeMinutes} minutes`;
+        
+        item.appendChild(colorBox);
+        item.appendChild(label);
+        legend.appendChild(item);
+    });
+    
+    // Add close button
+    const closeButton = document.createElement('button');
+    closeButton.className = 'btn btn-sm btn-outline-secondary mt-2';
+    closeButton.textContent = 'Close';
+    closeButton.style.display = 'block';
+    closeButton.style.marginLeft = 'auto';
+    closeButton.addEventListener('click', function() {
+        legend.remove();
+        clearIsochrones();
+    });
+    legend.appendChild(closeButton);
+    
+    // Add to map
+    document.querySelector('.map-container').appendChild(legend);
+}
+
 // Call init when page loads
 document.addEventListener('DOMContentLoaded', initMap);
 
@@ -459,7 +655,6 @@ function toggleMarkersVisibility(visible) {
 
 function toggleSingleMarkerVisibility(poiId, visible) {
     const marker = markers.find(m => m.poi_id === poiId);
-    
     if (marker) {
         if (visible) {
             marker.addTo(map);
