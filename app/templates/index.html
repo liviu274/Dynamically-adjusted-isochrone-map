@@ -1,172 +1,340 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamically Adjusted Isochrone Map</title>
+    <title>Isochrone Explorer</title>
+
+    <!-- CSS Dependencies -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;600&family=Syncopate:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        :root {
+            --neon-primary: #00ffa3;
+            --neon-secondary: #0088ff;
+            --dark-bg: #0a0a0f;
+            --card-bg: #12151f;
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --glow: 0 0 20px rgba(0, 255, 163, 0.2);
+        }
+
+        * {
             margin: 0;
             padding: 0;
-            background-color: #f5f5f5;
-            color: #333;
+            box-sizing: border-box;
+            font-family: 'Space Grotesk', sans-serif;
         }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
+
+        body {
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
         }
-        header {
-            background-color: #2c3e50;
-            color: white;
-            padding: 20px 0;
-            text-align: center;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+
+        .navbar {
+            background: rgba(18, 21, 31, 0.8);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(0, 255, 163, 0.1);
+            padding: 1rem 0;
         }
-        h1 {
-            margin: 0;
-            font-size: 2rem;
+
+        .navbar-brand {
+            font-family: 'Syncopate', sans-serif;
+            color: var(--neon-primary);
+            font-size: 1.5rem;
+            text-shadow: 0 0 10px rgba(0, 255, 163, 0.3);
         }
+
         .map-container {
-            background-color: white;
-            border-radius: 5px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            background: var(--card-bg);
+            border-radius: 20px;
             padding: 20px;
-            margin-top: 20px;
-            height: 500px;
+            box-shadow: var(--glow);
+            border: 1px solid rgba(0, 255, 163, 0.1);
+            margin-bottom: 2rem;
         }
+
         #map {
-            height: 100%;
-            width: 100%;
+            height: 600px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 255, 163, 0.1);
         }
-        .controls {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: white;
-            border-radius: 5px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+
+        .controls, .sidebar {
+            background: var(--card-bg);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: var(--glow);
+            border: 1px solid rgba(0, 255, 163, 0.1);
         }
-        .sidebar {
-            background-color: white;
-            border-radius: 5px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-            padding: 15px;
-            margin-top: 20px;
-            max-height: 500px;
-            overflow-y: auto;
+
+        .form-control, .form-select, textarea {
+            background: rgba(18, 21, 31, 0.8);
+            border: 1px solid rgba(0, 255, 163, 0.2);
+            color: var(--text-primary);
+            border-radius: 10px;
+            padding: 0.8rem;
         }
+
+        .form-label {
+            color: var(--neon-primary);
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: var(--neon-primary);
+            color: var(--dark-bg);
+            border: none;
+            padding: 0.8rem 2rem;
+            border-radius: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
         .poi-item {
-            cursor: pointer;
-            transition: background-color 0.2s;
+            background: rgba(18, 21, 31, 0.8);
+            border: 1px solid rgba(0, 255, 163, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
         }
-        .poi-item:hover {
-            background-color: #f8f9fa;
+
+        .poi-item button {
+            margin-left: 5px;
         }
-        footer {
-            text-align: center;
-            margin-top: 20px;
-            padding: 10px;
-            color: #7f8c8d;
-            font-size: 0.9rem;
+
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+        }
+
+        .toast {
+            background: var(--card-bg);
+            border-left: 4px solid var(--neon-primary);
+            color: var(--text-primary);
+            padding: 1rem;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            box-shadow: var(--glow);
         }
     </style>
 </head>
 <body>
-    <header>
-        <div class="container">
-            <h1>Dynamically Adjusted Isochrone Map</h1>
-        </div>
-    </header>
-    
+
+<nav class="navbar">
     <div class="container">
-        <div class="row">
-            <div class="col-md-8">
-                <div class="map-container">
-                    <div id="map"></div>
-                </div>
-                
-                <div class="controls mt-3">
-                    <h3>Add Point of Interest</h3>
-                    <p class="text-muted">Click on the map to set location, then fill the form below.</p>
-                    
-                    <form id="poi-form">
-                        <input type="hidden" id="poi-id">
-                        <input type="hidden" id="poi-latitude">
-                        <input type="hidden" id="poi-longitude">
-                        
-                        <div class="mb-3">
-                            <label for="poi-name" class="form-label">Name</label>
-                            <input type="text" class="form-control" id="poi-name" required>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="poi-category" class="form-label">Category</label>
-                            <select class="form-control" id="poi-category">
-                                <option value="Restaurant">Restaurant</option>
-                                <option value="Park">Park</option>
-                                <option value="Museum">Museum</option>
-                                <option value="School">School</option>
-                                <option value="Shopping">Shopping</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="poi-description" class="form-label">Description</label>
-                            <textarea class="form-control" id="poi-description" rows="3"></textarea>
-                        </div>
-                        
-                        <div class="d-flex justify-content-between">
-                            <button type="submit" class="btn btn-primary" id="save-poi-btn">Save POI</button>
-                            <button type="button" class="btn btn-secondary" id="cancel-edit-btn" style="display:none;">Cancel Edit</button>
-                            <button type="reset" class="btn btn-outline-secondary">Clear Form</button>
-                        </div>
-                    </form>
-                </div>
+        <span class="navbar-brand">
+            <i class="bi bi-hexagon-fill"></i> ISOCHRONE EXPLORER
+        </span>
+    </div>
+</nav>
+
+<div class="container py-4">
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="map-container">
+                <div id="map"></div>
             </div>
-            
-            <div class="col-md-4">
-                <div class="sidebar">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h3>Points of Interest</h3>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="poi-visibility-toggle" checked>
-                            <label class="form-check-label" for="poi-visibility-toggle">Show POIs</label>
-                        </div>
+
+            <div class="controls">
+                <h4 class="mb-4"><i class="bi bi-geo-alt-fill me-2" style="color: var(--neon-primary)"></i>Add Point of Interest</h4>
+                <form id="poi-form">
+                    <input type="hidden" id="poi-latitude">
+                    <input type="hidden" id="poi-longitude">
+
+                    <div class="mb-3">
+                        <label class="form-label">Location Name</label>
+                        <input type="text" class="form-control" id="poi-name" required>
                     </div>
-                    <div class="input-group mb-3">
-                        <input type="text" class="form-control" id="poi-search" placeholder="Search POIs...">
+
+                    <div class="mb-3">
+                        <label class="form-label">Category</label>
+                        <select class="form-select" id="poi-category">
+                            <option>Restaurant</option>
+                            <option>Park</option>
+                            <option>Museum</option>
+                            <option>School</option>
+                            <option>Shopping</option>
+                        </select>
                     </div>
-                    <div id="poi-list">
-                        <!-- POI list will be populated here -->
+
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" id="poi-description" rows="2"></textarea>
                     </div>
-                </div>
+
+                    <div class="mb-4">
+                        <label class="form-label">Travel time: <span id="time-val">10</span> minutes</label>
+                        <input type="range" class="form-range" id="time-range" min="1" max="60" value="10">
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-plus-lg me-2"></i>Save Location
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="sidebar">
+                <h4 class="mb-4"><i class="bi bi-bookmark-star-fill me-2" style="color: var(--neon-primary)"></i>Saved Locations</h4>
+                <div id="poi-list"></div>
             </div>
         </div>
     </div>
-    
-    <footer>
-        <div class="container">
-            <p>© 2023 Isochrone Map Project</p>
-        </div>
-    </footer>
-    
-    <!-- Leaflet JS - OpenStreetMap -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    
-    <!-- Foursquare API Key -->
-    <script>
-        const FOURSQUARE_API_KEY = "{{ foursquare_api_key }}";
-    </script>
-    
-    <!-- Custom JavaScript -->
-    <script src="{{ url_for('static', filename='js/map.js') }}"></script>
-    
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const map = L.map('map').setView([45.76, 21.23], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    let isochroneCircle = null;
+    let selectedMarker = null;
+    const markers = [];
+    let editingItem = null;
+
+    const showToast = (msg) => {
+        const container = document.getElementById("toast-container");
+        const toast = document.createElement("div");
+        toast.className = "toast";
+        toast.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>${msg}`;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    };
+
+    map.on('click', (e) => {
+        const { lat, lng } = e.latlng;
+        document.getElementById('poi-latitude').value = lat;
+        document.getElementById('poi-longitude').value = lng;
+
+        if (isochroneCircle) map.removeLayer(isochroneCircle);
+        if (selectedMarker) map.removeLayer(selectedMarker);
+
+        const minutes = parseInt(document.getElementById('time-range').value);
+        const radius = minutes * 100;
+
+        isochroneCircle = L.circle([lat, lng], {
+            radius,
+            color: '#00ffa3',
+            fillColor: '#00ffa3',
+            fillOpacity: 0.1,
+            weight: 2
+        }).addTo(map);
+
+        selectedMarker = L.marker([lat, lng]).addTo(map).bindPopup("Selected location").openPopup();
+    });
+
+    document.getElementById('time-range').addEventListener('input', function () {
+        document.getElementById('time-val').textContent = this.value;
+    });
+
+    document.getElementById('poi-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+
+        const name = document.getElementById('poi-name').value;
+        const category = document.getElementById('poi-category').value;
+        const desc = document.getElementById('poi-description').value;
+        const lat = parseFloat(document.getElementById('poi-latitude').value);
+        const lng = parseFloat(document.getElementById('poi-longitude').value);
+
+        const minutes = parseInt(document.getElementById('time-range').value);
+        const radius = minutes * 100;
+
+        const marker = L.marker([lat, lng]).addTo(map)
+            .bindPopup(`<strong>${name}</strong><br><small>${category}</small><br>${desc}`);
+        markers.push(marker);
+
+        if (isochroneCircle) map.removeLayer(isochroneCircle);
+        isochroneCircle = L.circle([lat, lng], {
+            radius,
+            color: '#00ffa3',
+            fillColor: '#00ffa3',
+            fillOpacity: 0.1,
+            weight: 2
+        }).addTo(map);
+
+        if (editingItem) {
+            editingItem.marker.remove();
+            editingItem.element.remove();
+        }
+
+        const item = document.createElement('div');
+        item.className = 'poi-item';
+        item.innerHTML = `
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <strong>${name}</strong><br>
+                    <small><i class="bi bi-tag-fill me-1"></i>${category}</small>
+                </div>
+                <div>
+                    <button class="btn btn-sm btn-outline-light btn-edit"><i class="bi bi-pencil-fill"></i></button>
+                    <button class="btn btn-sm btn-outline-danger btn-delete"><i class="bi bi-trash-fill"></i></button>
+                </div>
+            </div>
+        `;
+
+        item.querySelector('.btn-delete').addEventListener('click', () => {
+            marker.remove();
+            item.remove();
+            if (isochroneCircle) map.removeLayer(isochroneCircle);
+            if (selectedMarker) map.removeLayer(selectedMarker);
+            showToast("Location deleted");
+        });
+
+        item.querySelector('.btn-edit').addEventListener('click', () => {
+            document.getElementById('poi-name').value = name;
+            document.getElementById('poi-category').value = category;
+            document.getElementById('poi-description').value = desc;
+            document.getElementById('poi-latitude').value = lat;
+            document.getElementById('poi-longitude').value = lng;
+
+            if (isochroneCircle) map.removeLayer(isochroneCircle);
+            if (selectedMarker) map.removeLayer(selectedMarker);
+
+            isochroneCircle = L.circle([lat, lng], {
+                radius,
+                color: '#00ffa3',
+                fillColor: '#00ffa3',
+                fillOpacity: 0.1,
+                weight: 2
+            }).addTo(map);
+
+            selectedMarker = L.marker([lat, lng]).addTo(map)
+                .bindPopup("Editing location").openPopup();
+
+            editingItem = { marker, element: item };
+        });
+
+        item.addEventListener('click', (e) => {
+            if (!e.target.closest('button')) {
+                map.setView([lat, lng], 16);
+                marker.openPopup();
+            }
+        });
+
+        document.getElementById('poi-list').appendChild(item);
+        this.reset();
+        editingItem = null;
+
+        if (selectedMarker) {
+            map.removeLayer(selectedMarker);
+            selectedMarker = null;
+        }
+
+        showToast("Location saved successfully!");
+    });
+</script>
 </body>
 </html>
