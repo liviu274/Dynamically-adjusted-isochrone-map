@@ -1,8 +1,8 @@
 from flask import Blueprint, jsonify, request
 from app import db
 from app.models.poi import PointOfInterest
-# Commented - we'll implement it later
-# from app.services.travel_time_service import get_travel_times
+
+from app.services.travel_time_service import get_travel_times
 
 api_bp = Blueprint('api', __name__)
 
@@ -51,8 +51,6 @@ def delete_poi(poi_id):
     db.session.commit()
     return jsonify({'result': 'success'}), 200
 
-# Comment out this route for now - we'll implement it later
-"""
 @api_bp.route('/travel-times', methods=['GET'])
 def travel_times():
     origin_lat = request.args.get('origin_lat', type=float)
@@ -60,7 +58,52 @@ def travel_times():
     
     if not origin_lat or not origin_lng:
         return jsonify({'error': 'Origin coordinates required'}), 400
-        
-    times = get_travel_times(origin_lat, origin_lng)
+    
+    # Optional: Get destinations from query params or use all POIs
+    destinations_param = request.args.get('destinations')
+    
+    if destinations_param:
+        try:
+            destinations = json.loads(destinations_param)
+        except:
+            return jsonify({'error': 'Invalid destinations format'}), 400
+    else:
+        # If no destinations specified, get all POIs from database
+        pois = PointOfInterest.query.all()
+        destinations = [{'id': poi.id, 'name': poi.name, 'lat': poi.latitude, 'lng': poi.longitude} for poi in pois]
+    
+    # Get isochrones or travel times
+    use_isochrones = request.args.get('isochrones', 'false').lower() == 'true'
+    
+    if use_isochrones:
+        # Get isochrones (time-based polygons)
+        times = get_travel_times(origin_lat, origin_lng)
+    else:
+        # Get specific travel times to destinations
+        times = get_travel_times(origin_lat, origin_lng, destinations)
+    
     return jsonify(times)
-"""
+
+# Add route for specifically requesting isochrones
+@api_bp.route('/isochrones', methods=['GET'])
+def isochrones():
+    origin_lat = request.args.get('origin_lat', type=float)
+    origin_lng = request.args.get('origin_lng', type=float)
+    
+    if not origin_lat or not origin_lng:
+        return jsonify({'error': 'Origin coordinates required'}), 400
+    
+    # Get optional parameters with defaults
+    travel_mode = request.args.get('mode', 'driving-car')
+    
+    # Parse travel times array if provided
+    time_ranges = request.args.get('times', '5,10,15')
+    try:
+        travel_times = [int(t) for t in time_ranges.split(',')]
+    except:
+        travel_times = [5, 10, 15]  # Default times
+    
+    from app.services.travel_time_service import get_isochrones
+    isochrone_data = get_isochrones(origin_lat, origin_lng, travel_times, travel_mode)
+    
+    return jsonify(isochrone_data)

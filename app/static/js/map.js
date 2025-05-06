@@ -1,470 +1,341 @@
-let map;
-let markers = [];
-let selectedMarker = null;
-let currentPopup = null;
-let editMode = false;
-let markersVisible = true;
-
-// Initialize the map
-function initMap() {
-    // Default center (London)
-    const center = [51.5074, -0.1278];
-    
-    // Create Leaflet map
-    map = L.map('map').setView(center, 13);
-    
-    // Add OpenStreetMap tile layer
+const map = L.map('map').setView([45.76, 21.23], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        attribution: '© OpenStreetMap contributors'
     }).addTo(map);
-    
-    // Add click listener to map for setting POI location
-    map.on('click', function(e) {
-        const position = e.latlng;
-        
-        // Update form with selected coordinates
-        document.getElementById("poi-latitude").value = position.lat;
-        document.getElementById("poi-longitude").value = position.lng;
-        
-        // If not in edit mode, clear the form except coordinates
-        if (!editMode) {
-            document.getElementById("poi-id").value = "";
-            document.getElementById("poi-name").value = "";
-            document.getElementById("poi-category").value = "Other";
-            document.getElementById("poi-description").value = "";
-        }
-        
-        // Show temporary marker at selected location
-        if (selectedMarker) {
-            map.removeLayer(selectedMarker);
-        }
-        
-        const blueIcon = new L.Icon({
-            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-            iconSize: [25, 41],
-            iconAnchor: [12, 41],
-            popupAnchor: [1, -34],
-            shadowSize: [41, 41]
-        });
-        
-        selectedMarker = L.marker([position.lat, position.lng], {icon: blueIcon}).addTo(map);
-    });
-    
-    // Set up form submission
-    document.getElementById("poi-form").addEventListener("submit", savePOI);
-    
-    // Set up cancel edit button
-    document.getElementById("cancel-edit-btn").addEventListener("click", cancelEdit);
-    
-    // Set up search functionality
-    document.getElementById("poi-search").addEventListener("input", filterPOIs);
-    
-    // Load existing POIs
-    loadPOIs();
-    
-    // Add this inside the initMap function after other event listeners
-    document.getElementById("poi-visibility-toggle").addEventListener("change", function(e) {
-        const isVisible = e.target.checked;
-        toggleMarkersVisibility(isVisible);
-        
-        // Update all individual toggle switches to match
-        document.querySelectorAll('.poi-visibility-toggle').forEach(toggle => {
-            toggle.checked = isVisible;
-        });
-    });
-}
 
-// Load points of interest from the API
-function loadPOIs() {
-    fetch('/api/pois')
-        .then(response => response.json())
-        .then(data => {
-            // Clear existing markers
-            clearMarkers();
-            
-            // Add markers for each POI
-            data.forEach(poi => {
-                const marker = addMarkerForPOI(poi);
+    let isochroneCircle = null;
+    let selectedMarker = null;
+    const markers = [];
+    let editingItem = null;
+    let isochronesShowing = false;
+
+    const showToast = (msg) => {
+        const container = document.getElementById("toast-container");
+        const toast = document.createElement("div");
+        toast.className = "toast";
+        toast.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>${msg}`;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    };
+
+    // Function to fetch and display isochrones
+    const fetchAndDisplayIsochrones = (lat, lng) => {
+        fetch(`/api/isochrones?origin_lat=${lat}&origin_lng=${lng}`)
+            .then(response => response.json())
+            .then(data => {
+                // Clear existing isochrones
+                clearIsochrones();
                 
-                // If markers should be hidden, remove from map
-                if (!markersVisible && marker) {
-                    map.removeLayer(marker);
+                // Add isochrones to map
+                if (data.type === 'FeatureCollection' && data.features) {
+                    data.features.forEach(feature => {
+                        const color = feature.properties.color || '#0088ff';
+                        const isoLayer = L.geoJSON(feature, {
+                            style: {
+                                color: color,
+                                fillColor: color,
+                                fillOpacity: 0.2,
+                                weight: 2,
+                                opacity: 0.7
+                            }
+                        }).addTo(map);
+                        
+                        // Add tooltip with time information
+                        const timeMinutes = feature.properties.time_minutes || Math.round(feature.properties.value / 60);
+                        isoLayer.bindTooltip(`${timeMinutes} minutes`, {
+                            permanent: false,
+                            direction: 'center'
+                        });
+                        
+                        // Store for later removal
+                        isochroneLayers.push(isoLayer);
+                    });
+                    isochronesShowing = true; // Set flag when isochrones are displayed
                 }
+            })
+            .catch(error => {
+                console.error('Error fetching isochrones:', error);
+                showToast('Failed to load travel times. Please try again.');
             });
-            
-            // Update the POI list in the sidebar
-            updatePOIList(data);
-        })
-        .catch(error => console.error('Error loading POIs:', error));
-}
+    };
+    
+    // Clear isochrones
+    const isochroneLayers = [];
+    const clearIsochrones = () => {
+        isochroneLayers.forEach(layer => map.removeLayer(layer));
+        isochroneLayers.length = 0;
+        isochronesShowing = false; // Reset flag when cleared
+    };
 
-// Add a marker for a point of interest
-function addMarkerForPOI(poi) {
-    const position = [poi.latitude, poi.longitude];
-    
-    // Create the marker
-    const marker = L.marker(position);
-    
-    // Only add to map if markers are visible
-    if (markersVisible) {
-        marker.addTo(map);
+    function clearJustIsochrones() {
+        if (isochronesShowing) {
+            console.log('Clearing only isochrones');
+            clearIsochrones();
+        }
     }
-    
-    // Rest of the function remains the same...
-    // Create popup content
-    const popupContent = `
-        <div class="info-window">
-            <h5>${poi.name}</h5>
-            <p>${poi.description || 'No description'}</p>
-            <p><strong>Category:</strong> ${poi.category || 'Uncategorized'}</p>
-            <div class="mt-2">
-                <button class="btn btn-sm btn-primary edit-poi-btn" data-poi-id="${poi.id}">Edit</button>
-                <button class="btn btn-sm btn-danger delete-poi-btn" data-poi-id="${poi.id}">Delete</button>
-            </div>
-        </div>
-    `;
-    
-    const popup = L.popup().setContent(popupContent);
-    marker.bindPopup(popup);
-    
-    // Add click listener to marker
-    marker.on('click', function() {
-        currentPopup = popup;
-        
-        // Add event listeners after popup is opened
-        setTimeout(() => {
-            document.querySelector(`.edit-poi-btn[data-poi-id="${poi.id}"]`).addEventListener('click', () => {
-                editPOI(poi.id);
-                marker.closePopup();
-            });
-            
-            document.querySelector(`.delete-poi-btn[data-poi-id="${poi.id}"]`).addEventListener('click', () => {
-                deletePOI(poi.id);
-                marker.closePopup();
-            });
-        }, 100);
+
+    map.on('click', (e) => {
+        const { lat, lng } = e.latlng;
+        document.getElementById('poi-latitude').value = lat;
+        document.getElementById('poi-longitude').value = lng;
+
+        if (isochroneCircle) map.removeLayer(isochroneCircle);
+        if (selectedMarker) map.removeLayer(selectedMarker);
+
+        const minutes = parseInt(document.getElementById('time-range').value);
+        const radius = minutes * 100;
+
+        isochroneCircle = L.circle([lat, lng], {
+            radius,
+            color: '#00ffa3',
+            fillColor: '#00ffa3',
+            fillOpacity: 0.1,
+            weight: 2
+        }).addTo(map);
+
+        selectedMarker = L.marker([lat, lng]).addTo(map).bindPopup("Selected location").openPopup();
     });
-    
-    // Store marker with POI ID
-    marker.poi_id = poi.id;
-    markers.push(marker);
-    
-    return marker;
-}
 
-// Clear all markers from the map
-function clearMarkers() {
-    markers.forEach(marker => map.removeLayer(marker));
-    markers = [];
-}
+    // Add context menu for right-click on map
+    map.on('contextmenu', function(e) {
+        clearIsochrones();
+        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
+    });
 
-// Update the POI list in the sidebar
-function updatePOIList(pois) {
-    const poiList = document.getElementById("poi-list");
-    poiList.innerHTML = '';
-    
-    if (pois.length === 0) {
-        poiList.innerHTML = '<p class="text-muted">No points of interest found.</p>';
-        return;
-    }
-    
-    pois.forEach(poi => {
-        // Find the marker for this POI to check its visibility state
-        const marker = markers.find(m => m.poi_id === poi.id);
-        const isVisible = marker ? map.hasLayer(marker) : true;
-        
-        const poiItem = document.createElement('div');
-        poiItem.className = 'poi-item card mb-2';
-        poiItem.innerHTML = `
-            <div class="card-body py-2">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0">${poi.name}</h6>
-                    <div class="d-flex align-items-center">
-                        <div class="form-check form-switch me-2">
-                            <input class="form-check-input poi-visibility-toggle" type="checkbox" data-poi-id="${poi.id}" ${isVisible ? 'checked' : ''}>
-                        </div>
-                        <span class="badge bg-secondary">${poi.category || 'Other'}</span>
-                    </div>
-                </div>
-                <div class="mt-2 d-flex justify-content-between">
-                    <button class="btn btn-sm btn-outline-primary view-poi-btn" data-poi-id="${poi.id}">View</button>
-                    <div>
-                        <button class="btn btn-sm btn-outline-secondary edit-list-poi-btn" data-poi-id="${poi.id}">Edit</button>
-                        <button class="btn btn-sm btn-outline-danger delete-list-poi-btn" data-poi-id="${poi.id}">Delete</button>
-                    </div>
+    document.getElementById('time-range').addEventListener('input', function () {
+        document.getElementById('time-val').textContent = this.value;
+    });
+
+    document.getElementById('poi-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+
+        const name = document.getElementById('poi-name').value;
+        const category = document.getElementById('poi-category').value;
+        const desc = document.getElementById('poi-description').value;
+        const lat = parseFloat(document.getElementById('poi-latitude').value);
+        const lng = parseFloat(document.getElementById('poi-longitude').value);
+
+        const minutes = parseInt(document.getElementById('time-range').value);
+        const radius = minutes * 100;
+
+        // Create popup content with travel time button
+        const popupContent = `
+            <div>
+                <strong>${name}</strong><br>
+                <small>${category}</small><br>
+                ${desc}
+                <div class="mt-2">
+                    <button class="btn-travel-time travel-time-btn" data-lat="${lat}" data-lng="${lng}">
+                        <i class="bi bi-clock-fill me-1"></i>Show Travel Times
+                    </button>
                 </div>
             </div>
         `;
-        
-        poiList.appendChild(poiItem);
-        
-        // Add event listeners
-        poiItem.querySelector(`.view-poi-btn[data-poi-id="${poi.id}"]`).addEventListener('click', () => {
-            viewPOI(poi.id);
-        });
-        
-        poiItem.querySelector(`.edit-list-poi-btn[data-poi-id="${poi.id}"]`).addEventListener('click', () => {
-            editPOI(poi.id);
-        });
-        
-        poiItem.querySelector(`.delete-list-poi-btn[data-poi-id="${poi.id}"]`).addEventListener('click', () => {
-            deletePOI(poi.id);
-        });
-        
-        // Add event listener for individual visibility toggle
-        poiItem.querySelector(`.poi-visibility-toggle[data-poi-id="${poi.id}"]`).addEventListener('change', (e) => {
-            toggleSingleMarkerVisibility(poi.id, e.target.checked);
-        });
-    });
-}
 
-// Save (create or update) a POI
-function savePOI(event) {
-    event.preventDefault();
-    
-    const poiId = document.getElementById("poi-id").value;
-    const name = document.getElementById("poi-name").value;
-    const latitude = parseFloat(document.getElementById("poi-latitude").value);
-    const longitude = parseFloat(document.getElementById("poi-longitude").value);
-    const category = document.getElementById("poi-category").value;
-    const description = document.getElementById("poi-description").value;
-    
-    if (!name || !latitude || !longitude) {
-        alert("Please provide a name and select a location on the map.");
-        return;
-    }
-    
-    const poiData = {
-        name: name,
-        latitude: latitude,
-        longitude: longitude,
-        category: category,
-        description: description
-    };
-    
-    let url = '/api/pois';
-    let method = 'POST';
-    
-    // If POI ID exists, update instead of create
-    if (poiId) {
-        url += `/${poiId}`;
-        method = 'PUT';
-    }
-    
-    fetch(url, {
-        method: method,
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(poiData)
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
+        const marker = L.marker([lat, lng]).addTo(map)
+            .bindPopup(popupContent);
+            
+        // Add event listener to the popup content after it's opened
+        marker.on('popupopen', function() {
+            setTimeout(() => {
+                const travelTimeBtn = document.querySelector('.travel-time-btn');
+                if (travelTimeBtn) {
+                    travelTimeBtn.addEventListener('click', function() {
+                        const btnLat = parseFloat(this.getAttribute('data-lat'));
+                        const btnLng = parseFloat(this.getAttribute('data-lng'));
+                        fetchAndDisplayIsochrones(btnLat, btnLng);
+                    });
+                }
+            }, 100);
+        });
+            
+        markers.push(marker);
+
+        if (isochroneCircle) map.removeLayer(isochroneCircle);
+        isochroneCircle = L.circle([lat, lng], {
+            radius,
+            color: '#00ffa3',
+            fillColor: '#00ffa3',
+            fillOpacity: 0.1,
+            weight: 2
+        }).addTo(map);
+
+        if (editingItem) {
+            editingItem.marker.remove();
+            editingItem.element.remove();
         }
-        return response.json();
-    })
-    .then(data => {
-        // Clear form and temporary marker
-        document.getElementById("poi-form").reset();
-        document.getElementById("poi-id").value = "";
-        
+
+        const item = document.createElement('div');
+        item.className = 'poi-item';
+        item.innerHTML = `
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <strong>${name}</strong><br>
+                    <small><i class="bi bi-tag-fill me-1"></i>${category}</small>
+                </div>
+                <div>
+                    <button class="btn btn-sm btn-outline-light btn-edit"><i class="bi bi-pencil-fill"></i></button>
+                    <button class="btn btn-sm btn-outline-danger btn-delete"><i class="bi bi-trash-fill"></i></button>
+                </div>
+            </div>
+        `;
+
+        item.querySelector('.btn-delete').addEventListener('click', () => {
+            marker.remove();
+            item.remove();
+            if (isochroneCircle) map.removeLayer(isochroneCircle);
+            if (selectedMarker) map.removeLayer(selectedMarker);
+            showToast("Location deleted");
+        });
+
+        item.querySelector('.btn-edit').addEventListener('click', () => {
+            document.getElementById('poi-name').value = name;
+            document.getElementById('poi-category').value = category;
+            document.getElementById('poi-description').value = desc;
+            document.getElementById('poi-latitude').value = lat;
+            document.getElementById('poi-longitude').value = lng;
+
+            if (isochroneCircle) map.removeLayer(isochroneCircle);
+            if (selectedMarker) map.removeLayer(selectedMarker);
+
+            isochroneCircle = L.circle([lat, lng], {
+                radius,
+                color: '#00ffa3',
+                fillColor: '#00ffa3',
+                fillOpacity: 0.1,
+                weight: 2
+            }).addTo(map);
+
+            selectedMarker = L.marker([lat, lng]).addTo(map)
+                .bindPopup("Editing location").openPopup();
+
+            editingItem = { marker, element: item };
+        });
+
+        item.addEventListener('click', (e) => {
+            if (!e.target.closest('button')) {
+                map.setView([lat, lng], 16);
+                marker.openPopup();
+                
+                // Add event listener for the travel time button after the popup is opened
+                setTimeout(() => {
+                    const travelTimeBtn = document.querySelector('.travel-time-btn');
+                    if (travelTimeBtn) {
+                        travelTimeBtn.addEventListener('click', function() {
+                            const btnLat = parseFloat(this.getAttribute('data-lat'));
+                            const btnLng = parseFloat(this.getAttribute('data-lng'));
+                            fetchAndDisplayIsochrones(btnLat, btnLng);
+                        });
+                    }
+                }, 100);
+            }
+        });
+
+        document.getElementById('poi-list').appendChild(item);
+        this.reset();
+        editingItem = null;
+
         if (selectedMarker) {
             map.removeLayer(selectedMarker);
             selectedMarker = null;
         }
-        
-        // Exit edit mode
-        editMode = false;
-        document.getElementById("save-poi-btn").textContent = "Save POI";
-        document.getElementById("cancel-edit-btn").style.display = "none";
-        
-        // Reload POIs to refresh the map and list
-        loadPOIs();
-    })
-    .catch(error => {
-        console.error('Error saving POI:', error);
-        alert('Failed to save the point of interest. Please try again.');
+
+        showToast("Location saved successfully!");
     });
-}
 
-// View a POI (center map and open popup)
-function viewPOI(poiId) {
-    const marker = markers.find(m => m.poi_id === poiId);
-    
-    if (marker) {
-        // Center map on the POI
-        map.setView(marker.getLatLng(), 16);
+    // Add the time range listener 
+    document.getElementById('time-range').addEventListener('input', function() {
+        document.getElementById('time-val').textContent = this.value;
+    });
+
+    // Add context menu for right-click on map
+    map.on('contextmenu', function(e) {
+        clearIsochrones();
+        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
+    });
+
+    // Create circle visualization on click
+    map.on('click', function(e) {
+        // Your existing click handler still runs, but we'll add circles too
+        const minutes = parseInt(document.getElementById('time-range').value);
+        const radius = minutes * 100;
         
-        // Open the popup
-        marker.openPopup();
-    }
-}
+        // Add circle visualization if needed
+        if (window.isochroneCircle) map.removeLayer(window.isochroneCircle);
+        window.isochroneCircle = L.circle([e.latlng.lat, e.latlng.lng], {
+            radius,
+            color: '#00ffa3',
+            fillColor: '#00ffa3',
+            fillOpacity: 0.1,
+            weight: 2
+        }).addTo(map);
+    });
 
-// Edit a POI
-function editPOI(poiId) {
-    editMode = true;
-    
-    // Get POI details
-    fetch(`/api/pois/${poiId}`)
-        .then(response => response.json())
-        .then(poi => {
-            // Populate form with POI data
-            document.getElementById("poi-id").value = poi.id;
-            document.getElementById("poi-name").value = poi.name;
-            document.getElementById("poi-latitude").value = poi.latitude;
-            document.getElementById("poi-longitude").value = poi.longitude;
-            document.getElementById("poi-category").value = poi.category || 'Other';
-            document.getElementById("poi-description").value = poi.description || '';
+
+    function clearSelectedMarker() {
+        if (selectedMarker && !editingItem) {
+            console.log('Clearing temporary marker');
             
-            // Show temporary marker at POI location
-            if (selectedMarker) {
-                map.removeLayer(selectedMarker);
+            // Remove the marker
+            map.removeLayer(selectedMarker);
+            selectedMarker = null;
+            
+            // Also remove the circle
+            if (isochroneCircle) {
+                console.log('Clearing temporary circle');
+                map.removeLayer(isochroneCircle);
+                isochroneCircle = null;
             }
             
-            const blueIcon = new L.Icon({
-                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                iconSize: [25, 41],
-                iconAnchor: [12, 41],
-                popupAnchor: [1, -34],
-                shadowSize: [41, 41]
-            });
+            // Also clear any window.isochroneCircle (from the second click handler)
+            if (window.isochroneCircle) {
+                console.log('Clearing window circle');
+                map.removeLayer(window.isochroneCircle);
+                window.isochroneCircle = null;
+            }
             
-            selectedMarker = L.marker([poi.latitude, poi.longitude], {icon: blueIcon}).addTo(map);
+            // Also clear isochrones created by right-click
+            clearIsochrones();
             
-            // Center map on the POI
-            map.setView([poi.latitude, poi.longitude], 16);
-            
-            // Update UI for edit mode
-            document.getElementById("save-poi-btn").textContent = "Update POI";
-            document.getElementById("cancel-edit-btn").style.display = "inline-block";
-        })
-        .catch(error => {
-            console.error('Error fetching POI details:', error);
-            alert('Failed to load POI details for editing.');
+            // Clear coordinates from form
+            document.getElementById('poi-latitude').value = '';
+            document.getElementById('poi-longitude').value = '';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Escape key handler
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                console.log('Escape key pressed');
+                clearSelectedMarker();
+                clearJustIsochrones(); // Always try to clear isochrones
+            }
         });
-}
-
-// Cancel editing
-function cancelEdit() {
-    editMode = false;
     
-    // Clear form
-    document.getElementById("poi-form").reset();
-    document.getElementById("poi-id").value = "";
-    
-    // Remove temporary marker
-    if (selectedMarker) {
-        map.removeLayer(selectedMarker);
-        selectedMarker = null;
-    }
-    
-    // Update UI
-    document.getElementById("save-poi-btn").textContent = "Save POI";
-    document.getElementById("cancel-edit-btn").style.display = "none";
-}
-
-// Delete a POI
-function deletePOI(poiId) {
-    if (!confirm("Are you sure you want to delete this point of interest?")) {
-        return;
-    }
-    
-    fetch(`/api/pois/${poiId}`, {
-        method: 'DELETE'
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        // If we were editing this POI, cancel edit mode
-        if (editMode && document.getElementById("poi-id").value == poiId) {
-            cancelEdit();
-        }
-        
-        // Reload POIs to refresh the map and list
-        loadPOIs();
-    })
-    .catch(error => {
-        console.error('Error deleting POI:', error);
-        alert('Failed to delete the point of interest. Please try again.');
-    });
-}
-
-// Filter POIs based on search input
-function filterPOIs() {
-    const searchText = document.getElementById("poi-search").value.toLowerCase();
-    
-    fetch('/api/pois')
-        .then(response => response.json())
-        .then(pois => {
-            const filteredPOIs = pois.filter(poi => {
-                return poi.name.toLowerCase().includes(searchText) || 
-                       (poi.category && poi.category.toLowerCase().includes(searchText)) ||
-                       (poi.description && poi.description.toLowerCase().includes(searchText));
-            });
+        // Click outside handler - use mousedown for better detection
+        document.addEventListener('mousedown', function(event) {
+            // First check if we need to clear isochrones (regardless of marker)
+            const mapElement = document.getElementById('map');
+            const formContainer = document.querySelector('.controls');
+            const sidebar = document.querySelector('.sidebar');
             
-            updatePOIList(filteredPOIs);
-        })
-        .catch(error => console.error('Error filtering POIs:', error));
-}
-
-// Call init when page loads
-document.addEventListener('DOMContentLoaded', initMap);
-
-function searchFoursquareLocations(query, lat, lng) {
-    const options = {
-        method: 'GET',
-        headers: {
-            Accept: 'application/json',
-            Authorization: FOURSQUARE_API_KEY
-        }
-    };
-    
-    const radius = 1000; // Search radius in meters
-    const url = `https://api.foursquare.com/v3/places/search?query=${query}&ll=${lat},${lng}&radius=${radius}&limit=10`;
-    
-    fetch(url, options)
-        .then(response => response.json())
-        .then(data => {
-            console.log('Foursquare results:', data);
-            // Process and display the results
-            if (data.results && data.results.length > 0) {
-                data.results.forEach(place => {
-                    // You could create markers or add to a suggestions list
-                    console.log(place.name, place.location);
-                });
+            if (!mapElement.contains(event.target) && 
+                !formContainer.contains(event.target) && 
+                !sidebar.contains(event.target)) {
+                
+                clearJustIsochrones(); // Always try to clear isochrones
             }
-        })
-        .catch(err => console.error('Error fetching from Foursquare:', err));
-}
-
-// Add this function after the initMap function
-function toggleMarkersVisibility(visible) {
-    markersVisible = visible;
-    
-    markers.forEach(marker => {
-        if (visible) {
-            marker.addTo(map);
-        } else {
-            map.removeLayer(marker);
-        }
+            
+            // Then handle marker clearing as before
+            if (!selectedMarker || editingItem) return;
+            
+            if (!mapElement.contains(event.target) && 
+                !formContainer.contains(event.target) && 
+                !sidebar.contains(event.target)) {
+                
+                console.log('Click outside detected');
+                clearSelectedMarker();
+            }
+        });
     });
-}
-
-function toggleSingleMarkerVisibility(poiId, visible) {
-    const marker = markers.find(m => m.poi_id === poiId);
-    
-    if (marker) {
-        if (visible) {
-            marker.addTo(map);
-        } else {
-            map.removeLayer(marker);
-        }
-    }
-}
