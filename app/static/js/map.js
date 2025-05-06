@@ -74,15 +74,6 @@ function initMap() {
             toggle.checked = isVisible;
         });
     });
-    
-    // Add context menu for right-click on map
-    map.on('contextmenu', function(e) {
-        // Clear existing isochrones
-        clearIsochrones();
-        
-        // Fetch and display isochrones from clicked location
-        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
-    });
 }
 
 // Load points of interest from the API
@@ -686,5 +677,17 @@ function toggleSingleMarkerVisibility(poiId, visible) {
         } else {
             map.removeLayer(marker);
         }
+    }
+}
+
+// Add this function to clear the temporary marker
+function clearSelectedMarker() {
+    if (selectedMarker && !editMode) {
+        map.removeLayer(selectedMarker);
+        selectedMarker = null;
+        
+        // Clear coordinates from form
+        document.getElementById("poi-latitude").value = "";
+        document.getElementById("poi-longitude").value = "";
     }
 }
