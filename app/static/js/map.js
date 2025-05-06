@@ -321,6 +321,14 @@ function viewPOI(poiId) {
         
         // Open the popup
         marker.openPopup();
+        
+        // Add a new button to show isochrones from this POI
+        const showIsochronesBtn = document.createElement('button');
+        showIsochronesBtn.className = 'btn btn-sm btn-info mt-2';
+        showIsochronesBtn.textContent = 'Show Travel Times';
+        showIsochronesBtn.addEventListener('click', () => {
+            fetchAndDisplayIsochrones(poi.latitude, poi.longitude);
+        });
     }
 }
 
