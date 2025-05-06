@@ -322,13 +322,28 @@ function viewPOI(poiId) {
         // Open the popup
         marker.openPopup();
         
-        // Add a new button to show isochrones from this POI
-        const showIsochronesBtn = document.createElement('button');
-        showIsochronesBtn.className = 'btn btn-sm btn-info mt-2';
-        showIsochronesBtn.textContent = 'Show Travel Times';
-        showIsochronesBtn.addEventListener('click', () => {
-            fetchAndDisplayIsochrones(poi.latitude, poi.longitude);
-        });
+        // Get the marker position
+        const position = marker.getLatLng();
+
+        // Add a timeout to ensure the popup is fully rendered before adding the button
+        setTimeout(() => {
+            // Find the popup content container
+            const container = document.querySelector(`.info-window[data-poi-id="${poiId}"]`);
+            if (container) {
+                // Create the button
+                const showIsochronesBtn = document.createElement('button');
+                showIsochronesBtn.className = 'btn btn-sm btn-info mt-2';
+                showIsochronesBtn.textContent = 'Show Travel Times';
+                
+                // Add event listener to call the API
+                showIsochronesBtn.addEventListener('click', () => {
+                    fetchAndDisplayIsochrones(position.lat, position.lng);
+                });
+                
+                // Append the button to the popup content
+                container.appendChild(showIsochronesBtn);
+            }
+        }, 100); // Short timeout to ensure popup is rendered
     }
 }
 
