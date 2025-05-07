@@ -42,26 +42,22 @@ const map = L.map('map').setView([45.76, 21.23], 13);
             .then(data => {
                 // Clear existing isochrones
                 clearIsochrones();
-    
+                
                 // Add isochrones to map
                 if (data.type === 'FeatureCollection' && data.features) {
                     data.features.forEach(feature => {
-                        // Safely access the time_minutes property
-                        const minutes = feature.properties?.time_minutes 
-                            ? feature.properties.time_minutes 
-                            : Math.round((feature.properties?.value || 0) / 60);
-    
-                        // Determine color based on time range
+                        const minutes = feature.properties?.time_minutes || Math.round(feature.properties?.value / 60);
+                        
+                        // Determine color based on minutes
                         let color;
                         if (minutes <= 5) {
-                            color = '#9b5de5'; // Purple
+                            color = '#9b5de5'; // Purple for 5 minutes
                         } else if (minutes <= 10) {
-                            color = '#00bbf9'; // Blue
+                            color = '#00bbf9'; // Blue for 10 minutes
                         } else {
-                            color = '#e63946'; // Red
+                            color = '#e63946'; // Red for 15 minutes
                         }
     
-                        // Create the isochrone layer
                         const isoLayer = L.geoJSON(feature, {
                             style: {
                                 color: color,
@@ -72,23 +68,23 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                             }
                         }).addTo(map);
     
-                        // Add tooltip with time information
-                        isoLayer.bindTooltip(`${minutes} minutes`, {
-                            permanent: false,
-                            direction: 'center'
+                        // Add interactive tooltip that shows on hover
+                        isoLayer.on('mouseover', function(e) {
+                            this.bindTooltip(`${minutes} minutes`, {
+                                permanent: false,
+                                direction: 'center',
+                                className: 'isochrone-tooltip'
+                            }).openTooltip(e.latlng);
                         });
     
-                        // Add hover effect to show tooltip
-                        isoLayer.on('mouseover', function (e) {
-                            this.openTooltip(e.latlng);
-                        });
-                        isoLayer.on('mouseout', function () {
+                        isoLayer.on('mouseout', function() {
                             this.closeTooltip();
                         });
-    
+                        
                         // Store for later removal
                         isochroneLayers.push(isoLayer);
                     });
+                    isochronesShowing = true;
                 }
             })
             .catch(error => {
