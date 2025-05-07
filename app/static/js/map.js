@@ -119,9 +119,12 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         };
     
         try {
-            // le pune in bdul meu
-            const response = await fetch('/api/pois', {
-                method: 'POST',
+            const url = editingItem ? `/api/pois/${editingItem}` : '/api/pois';
+            const method = editingItem ? 'PUT' : 'POST';
+            
+            // le pune in bd ul meu
+            const response = await fetch(url, {
+                method: method,
                 headers: {
                     'Content-Type': 'application/json',
                 },
@@ -132,22 +135,73 @@ const map = L.map('map').setView([45.76, 21.23], 13);
             
             const savedPOI = await response.json();
             
-
+            if (editingItem) {
+                // da update la marker
+                const existingMarker = markers.find(m => m.poi_id === editingItem);
+                if (existingMarker) {
+                    map.removeLayer(existingMarker);
+                    markers = markers.filter(m => m.poi_id !== editingItem);
+                }
+                
+                // update la elem din side bar
+                const sidebarItem = document.querySelector(`.poi-item button[data-id="${editingItem}"]`).closest('.poi-item');
+                if (sidebarItem) {
+                    sidebarItem.remove();
+                }
+            }
+    
             const marker = createMarker(savedPOI);
             marker.poi_id = savedPOI.id_poi;
             markers.push(marker);
-            
-            // pune in side bar
             addToSidebar(savedPOI);
             
-            // isi da reset formularul
-            this.reset();
-            clearSelectedMarker();
-            showToast("Location saved successfully!");
+            
+            // reset
+            document.getElementById('poi-form').reset();
+            if (selectedMarker) {
+                map.removeLayer(selectedMarker);
+                selectedMarker = null;
+            }
+            if (isochroneCircle) {
+                map.removeLayer(isochroneCircle);
+                isochroneCircle = null;
+            }
+
+            // reset buton
+            document.getElementById('poi-latitude').value = '';
+            document.getElementById('poi-longitude').value = '';
+            const submitBtn = document.querySelector('#poi-form button[type="submit"]');
+            submitBtn.innerHTML = '<i class="bi bi-plus-lg me-2"></i>Save Location';
+            
+            // reset mod de editare
+            editingItem = null;
+
+            // reactiveaza click pe harta
+            map.off('click');
+            map.on('click', (e) => {
+                const { lat, lng } = e.latlng;
+                document.getElementById('poi-latitude').value = lat.toFixed(6);
+                document.getElementById('poi-longitude').value = lng.toFixed(6);
+                
+                if (selectedMarker) {
+                    map.removeLayer(selectedMarker);
+                }
+                selectedMarker = L.marker([lat, lng])
+                    .addTo(map)
+                    .bindPopup("Selected location")
+                    .openPopup();
+            });
+            // this.reset();
+            // clearSelectedMarker();
+            // editingItem = null;
+            // const submitBtn = document.querySelector('#poi-form button[type="submit"]');
+            // submitBtn.innerHTML = '<i class="bi bi-plus-lg me-2"></i>Save Location';
+            
+            showToast(editingItem ? "Location updated successfully!" : "Location saved successfully!");
             
         } catch (error) {
             console.error('Error:', error);
-            showToast("Error saving location!");
+            showToast(editingItem ? "Error updating location!" : "Error saving location!");
         }
     });
     
@@ -168,7 +222,6 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         `;
     
         const marker = L.marker([poi.latitude, poi.longitude]).addTo(map).bindPopup(popupContent);
-    
         marker.poi_id = poi.id_poi;
         
         return marker;
@@ -197,6 +250,7 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         document.getElementById('poi-list').appendChild(item);
     }
 
+
     async function loadSavedLocations() {
         try {
             const response = await fetch('/api/pois');
@@ -214,6 +268,7 @@ const map = L.map('map').setView([45.76, 21.23], 13);
     }
     
     document.getElementById('poi-list').addEventListener('click', async function(e) {
+        // butonul de delete
         const deleteBtn = e.target.closest('.btn-delete');
         if (deleteBtn) {
             const id = parseInt(deleteBtn.dataset.id);
@@ -242,6 +297,45 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                 showToast("Error deleting location!");
             }
         }
+
+        // butonul de edit
+        const editBtn = e.target.closest('.btn-edit');
+        if (editBtn) {
+            const id = parseInt(editBtn.dataset.id);
+            try {
+                
+                const response = await fetch(`/api/pois/${id}`);
+                const poi = await response.json();
+                
+                // pune datele deja existente in formualr
+                document.getElementById('poi-name').value = poi.name;
+                document.getElementById('poi-latitude').value = poi.latitude;
+                document.getElementById('poi-longitude').value = poi.longitude;
+                document.getElementById('poi-category').value = poi.category;
+                document.getElementById('poi-description').value = poi.description;
+                
+                // suntem in mod de editare
+                editingItem = id;
+                
+                if (selectedMarker) {
+                    map.removeLayer(selectedMarker);
+                }
+                selectedMarker = L.marker([poi.latitude, poi.longitude])
+                    .addTo(map)
+                    .bindPopup("Editing location")
+                    .openPopup();
+                
+                // modif textul butonului de submit
+                const submitBtn = document.querySelector('#poi-form button[type="submit"]');
+                submitBtn.innerHTML = '<i class="bi bi-check-lg me-2"></i>Update Location';
+                
+                document.querySelector('.controls').scrollIntoView({ behavior: 'smooth' });
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showToast("Error loading location for edit!");
+            }
+        }
     });
 
 
@@ -260,7 +354,6 @@ const map = L.map('map').setView([45.76, 21.23], 13);
     map.on('click', (e) => {
         const { lat, lng } = e.latlng;
         
-        // Actualizează coordonatele în formular
         document.getElementById('poi-latitude').value = lat.toFixed(6);
         document.getElementById('poi-longitude').value = lng.toFixed(6);
     
