@@ -81,7 +81,18 @@ const map = L.map('map').setView([45.76, 21.23], 13);
             // Add isochrones to map
             if (data.type === 'FeatureCollection' && data.features) {
                 data.features.forEach(feature => {
-                    const color = feature.properties.color || '#0088ff';
+                    // Determine color based on time range
+                    let color;
+                    // Extract minutes from feature properties (value is in seconds)
+                    const minutes = Math.round(feature.properties.value / 60);
+                    if (minutes == 5) {
+                        color = '#9b5de5'; // Purple
+                    }
+                    else {
+                        color = '#e63946'; // Red
+                    }
+
+                    // Create the isochrone layer
                     const isoLayer = L.geoJSON(feature, {
                         style: {
                             color: color,
