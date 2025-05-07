@@ -39,10 +39,21 @@ const map = L.map('map').setView([45.76, 21.23], 13);
     // Function to fetch and display isochrones
     const fetchAndDisplayIsochrones = (lat, lng, customTimeMinutes = null) => {
         // Initialize time ranges properly
-        let timeRanges = [300, 600, 900];
+        let timeRanges = [300];
         if (customTimeMinutes) {
             timeRanges.push(customTimeMinutes * 60); // Properly add custom time to array
+            console.debug('Custom time added to timeRanges:', customTimeMinutes * 60);
+            console.log('Custom time range added:', customTimeMinutes * 60);
         }
+        else {
+        console.debug('No time added');
+        console.log('No time added');
+        // alert("No time added");
+        }
+        // Check if the JavaScript file is connected to the HTML
+        // alert("JavaScript file is successfully connected to the HTML.");
+
+
 
         fetch("https://api.openrouteservice.org/v2/isochrones/driving-car", {
             method: 'POST',
@@ -82,8 +93,8 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                     }).addTo(map);
                     
                     // Add tooltip with time information
-                    const timeMinutes = feature.properties.time_minutes || Math.round(feature.properties.value / 60);
-                    isoLayer.bindTooltip(`${timeMinutes} minutes`, {
+                    // const timeMinutes = feature.properties.time_minutes || Math.round(feature.properties.value / 60);
+                    isoLayer.bindTooltip(`isochrome map (default 5 minutes)`, {
                         permanent: false,
                         direction: 'center'
                     });
@@ -129,7 +140,7 @@ const map = L.map('map').setView([45.76, 21.23], 13);
     // Add context menu for right-click on map
     map.on('contextmenu', function(e) {
         clearIsochrones();
-        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
+        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng); // No custom time added
     });
 
     document.getElementById('time-range').addEventListener('input', function () {
@@ -144,6 +155,12 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         const desc = document.getElementById('poi-description').value;
         const lat = parseFloat(document.getElementById('poi-latitude').value);
         const lng = parseFloat(document.getElementById('poi-longitude').value);
+
+         // Validate coordinates before proceeding
+        if (isNaN(lat) || isNaN(lng)) {
+            showToast("Please select a valid location on the map first");
+            return; // Stop form submission
+        }
 
         const minutes = parseInt(document.getElementById('time-range').value);
         const radius = minutes * 100;
@@ -173,7 +190,8 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                     travelTimeBtn.addEventListener('click', function() {
                         const btnLat = parseFloat(this.getAttribute('data-lat'));
                         const btnLng = parseFloat(this.getAttribute('data-lng'));
-                        fetchAndDisplayIsochrones(btnLat, btnLng);
+                        const minutes = parseInt(document.getElementById('time-range').value);
+                        fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
                     });
                 }
             }, 100);
@@ -217,6 +235,8 @@ const map = L.map('map').setView([45.76, 21.23], 13);
             document.getElementById('poi-description').value = desc;
             document.getElementById('poi-latitude').value = lat;
             document.getElementById('poi-longitude').value = lng;
+            document.getElementById('poi-longitude').value = timeMinutes;
+
 
             if (isochroneCircle) map.removeLayer(isochroneCircle);
             if (selectedMarker) map.removeLayer(selectedMarker);
@@ -241,7 +261,8 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                         travelTimeBtn.addEventListener('click', function() {
                             const btnLat = parseFloat(this.getAttribute('data-lat'));
                             const btnLng = parseFloat(this.getAttribute('data-lng'));
-                            fetchAndDisplayIsochrones(btnLat, btnLng);
+                            const minutes = parseInt(document.getElementById('time-range').value);
+                            fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
                         });
                     }
                 }, 100);
