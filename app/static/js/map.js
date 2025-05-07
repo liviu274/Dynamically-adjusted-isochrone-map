@@ -36,44 +36,90 @@ const map = L.map('map').setView([45.76, 21.23], 13);
     };
 
     // Function to fetch and display isochrones
-    const fetchAndDisplayIsochrones = (lat, lng) => {
-        fetch(`/api/isochrones?origin_lat=${lat}&origin_lng=${lng}`)
-            .then(response => response.json())
-            .then(data => {
-                // Clear existing isochrones
-                clearIsochrones();
-                
-                // Add isochrones to map
-                if (data.type === 'FeatureCollection' && data.features) {
-                    data.features.forEach(feature => {
-                        const color = feature.properties.color || '#0088ff';
-                        const isoLayer = L.geoJSON(feature, {
-                            style: {
-                                color: color,
-                                fillColor: color,
-                                fillOpacity: 0.2,
-                                weight: 2,
-                                opacity: 0.7
-                            }
-                        }).addTo(map);
-                        
-                        // Add tooltip with time information
-                        const timeMinutes = feature.properties.time_minutes || Math.round(feature.properties.value / 60);
-                        isoLayer.bindTooltip(`${timeMinutes} minutes`, {
-                            permanent: false,
-                            direction: 'center'
-                        });
-                        
-                        // Store for later removal
-                        isochroneLayers.push(isoLayer);
-                    });
-                    isochronesShowing = true; // Set flag when isochrones are displayed
-                }
+    // Function to fetch and display isochrones
+    const fetchAndDisplayIsochrones = (lat, lng, customTimeMinutes = null) => {
+        // Initialize time ranges properly
+        let timeRanges = [300];
+        if (customTimeMinutes) {
+            timeRanges.push(customTimeMinutes * 60); // Properly add custom time to array
+            console.debug('Custom time added to timeRanges:', customTimeMinutes * 60);
+            console.log('Custom time range added:', customTimeMinutes * 60);
+        }
+        else {
+        console.debug('No time added');
+        console.log('No time added');
+        // alert("No time added");
+        }
+        // Check if the JavaScript file is connected to the HTML
+        // alert("JavaScript file is successfully connected to the HTML.");
+
+
+
+        fetch("https://api.openrouteservice.org/v2/isochrones/driving-car", {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8',
+                'Content-Type': 'application/json',
+                'Authorization': '5b3ce3597851110001cf6248e0fbfa8c07af43458da778a226442451'
+            },
+            body: JSON.stringify({
+                locations: [[lng, lat]],
+                range: timeRanges,
+                range_type: "time"
             })
-            .catch(error => {
-                console.error('Error fetching isochrones:', error);
-                showToast('Failed to load travel times. Please try again.');
-            });
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Clear existing isochrones
+            clearIsochrones();
+            
+            // Add isochrones to map
+            if (data.type === 'FeatureCollection' && data.features) {
+                data.features.forEach(feature => {
+                    // Determine color based on time range
+                    let color;
+                    // Extract minutes from feature properties (value is in seconds)
+                    const minutes = Math.round(feature.properties.value / 60);
+                    if (minutes == 5) {
+                        color = '#9b5de5'; // Purple
+                    }
+                    else {
+                        color = '#e63946'; // Red
+                    }
+
+                    // Create the isochrone layer
+                    const isoLayer = L.geoJSON(feature, {
+                        style: {
+                            color: color,
+                            fillColor: color,
+                            fillOpacity: 0.2,
+                            weight: 2,
+                            opacity: 0.7
+                        }
+                    }).addTo(map);
+                    
+                    // Add tooltip with time information
+                    // const timeMinutes = feature.properties.time_minutes || Math.round(feature.properties.value / 60);
+                    isoLayer.bindTooltip(`isochrome map (default 5 minutes)`, {
+                        permanent: false,
+                        direction: 'center'
+                    });
+                    
+                    // Store for later removal
+                    isochroneLayers.push(isoLayer);
+                });
+                isochronesShowing = true;
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching isochrones:', error);
+            showToast('Failed to load travel times. Please try again.');
+        });
     };
     
     // Clear isochrones
@@ -105,7 +151,7 @@ const map = L.map('map').setView([45.76, 21.23], 13);
     // Add context menu for right-click on map
     map.on('contextmenu', function(e) {
         clearIsochrones();
-        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
+        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng); // No custom time added
     });
 
     document.getElementById('time-range').addEventListener('input', function () {
@@ -120,6 +166,12 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         const desc = document.getElementById('poi-description').value;
         const lat = parseFloat(document.getElementById('poi-latitude').value);
         const lng = parseFloat(document.getElementById('poi-longitude').value);
+
+         // Validate coordinates before proceeding
+        if (isNaN(lat) || isNaN(lng)) {
+            showToast("Please select a valid location on the map first");
+            return; // Stop form submission
+        }
 
         const minutes = parseInt(document.getElementById('time-range').value);
 
@@ -148,13 +200,16 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                     travelTimeBtn.addEventListener('click', function() {
                         const btnLat = parseFloat(this.getAttribute('data-lat'));
                         const btnLng = parseFloat(this.getAttribute('data-lng'));
-                        fetchAndDisplayIsochrones(btnLat, btnLng);
+                        const minutes = parseInt(document.getElementById('time-range').value);
+                        fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
                     });
                 }
             }, 100);
         });
             
         markers.push(marker);
+
+        if (isochroneCircle) map.removeLayer(isochroneCircle);
 
         if (editingItem) {
             editingItem.marker.remove();
@@ -186,10 +241,12 @@ const map = L.map('map').setView([45.76, 21.23], 13);
 
         item.querySelector('.btn-edit').addEventListener('click', () => {
             document.getElementById('poi-name').value = name;
-            document.getElementById('poi-category').value = category;
+            document.getElementById('poi-category').value = category;      
             document.getElementById('poi-description').value = desc;
             document.getElementById('poi-latitude').value = lat;
             document.getElementById('poi-longitude').value = lng;
+            document.getElementById('poi-longitude').value = timeMinutes;
+
 
             if (isochroneCircle) map.removeLayer(isochroneCircle);
             if (selectedMarker) map.removeLayer(selectedMarker);
@@ -212,7 +269,8 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                         travelTimeBtn.addEventListener('click', function() {
                             const btnLat = parseFloat(this.getAttribute('data-lat'));
                             const btnLng = parseFloat(this.getAttribute('data-lng'));
-                            fetchAndDisplayIsochrones(btnLat, btnLng);
+                            const minutes = parseInt(document.getElementById('time-range').value);
+                            fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
                         });
                     }
                 }, 100);
