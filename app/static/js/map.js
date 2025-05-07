@@ -122,7 +122,6 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         const lng = parseFloat(document.getElementById('poi-longitude').value);
 
         const minutes = parseInt(document.getElementById('time-range').value);
-        const radius = minutes * 100;
 
         // Create popup content with travel time button
         const popupContent = `
@@ -156,15 +155,6 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         });
             
         markers.push(marker);
-
-        if (isochroneCircle) map.removeLayer(isochroneCircle);
-        isochroneCircle = L.circle([lat, lng], {
-            radius,
-            color: '#00ffa3',
-            fillColor: '#00ffa3',
-            fillOpacity: 0.1,
-            weight: 2
-        }).addTo(map);
 
         if (editingItem) {
             editingItem.marker.remove();
@@ -203,14 +193,6 @@ const map = L.map('map').setView([45.76, 21.23], 13);
 
             if (isochroneCircle) map.removeLayer(isochroneCircle);
             if (selectedMarker) map.removeLayer(selectedMarker);
-
-            isochroneCircle = L.circle([lat, lng], {
-                radius,
-                color: '#00ffa3',
-                fillColor: '#00ffa3',
-                fillOpacity: 0.1,
-                weight: 2
-            }).addTo(map);
 
             selectedMarker = L.marker([lat, lng]).addTo(map)
                 .bindPopup("Editing location").openPopup();
