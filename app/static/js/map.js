@@ -35,203 +35,11 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         setTimeout(() => toast.remove(), 3000);
     };
 
-<<<<<<< HEAD
     // Function to fetch and display isochrones
     const fetchAndDisplayIsochrones = (lat, lng) => {
         fetch(`/api/isochrones?origin_lat=${lat}&origin_lng=${lng}`)
             .then(response => response.json())
             .then(data => {
-=======
-// View a POI (center map and open popup)
-function viewPOI(poiId) {
-    const marker = markers.find(m => m.poi_id === poiId);
-    
-    if (marker) {
-        // Center map on the POI
-        map.setView(marker.getLatLng(), 16);
-        
-        // Open the popup
-        marker.openPopup();
-        
-        // Add travel times functionality
-        setTimeout(() => {
-            // Get the POI data to access properties
-            fetch(`/api/pois/${poiId}`)
-                .then(response => response.json())
-                .then(poi => {
-                    // Show isochrones
-                    clearIsochrones();
-                    fetchAndDisplayIsochrones(poi.latitude, poi.longitude);
-                    
-                    // Add travel time button if not already present
-                    const popupContent = document.querySelector('.leaflet-popup-content');
-                    if (popupContent && !popupContent.querySelector('.travel-time-btn')) {
-                        const travelTimeBtn = document.createElement('button');
-                        travelTimeBtn.className = 'btn btn-sm btn-info mt-2 travel-time-btn';
-                        travelTimeBtn.innerHTML = 'Show Travel Times';
-                        travelTimeBtn.addEventListener('click', () => {
-                            // Get current custom time value
-                            const currentCustomTime = parseInt(document.getElementById('time-range').value);
-                            fetchAndDisplayIsochrones(poi.latitude, poi.longitude, currentCustomTime);
-                        });
-                        popupContent.appendChild(travelTimeBtn);
-                    }
-                })
-                .catch(error => console.error('Error fetching POI:', error));
-        }, 300);
-    }
-}
-
-// Edit a POI
-function editPOI(poiId) {
-    editMode = true;
-    
-    // Get POI details
-    fetch(`/api/pois/${poiId}`)
-        .then(response => response.json())
-        .then(poi => {
-            // Populate form with POI data
-            document.getElementById("poi-id").value = poi.id;
-            document.getElementById("poi-name").value = poi.name;
-            document.getElementById("poi-latitude").value = poi.latitude;
-            document.getElementById("poi-longitude").value = poi.longitude;
-            document.getElementById("poi-category").value = poi.category || 'Other';
-            document.getElementById("poi-description").value = poi.description || '';
-            
-            // Show temporary marker at POI location
-            if (selectedMarker) {
-                map.removeLayer(selectedMarker);
-            }
-            
-            const blueIcon = new L.Icon({
-                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-                iconSize: [25, 41],
-                iconAnchor: [12, 41],
-                popupAnchor: [1, -34],
-                shadowSize: [41, 41]
-            });
-            
-            selectedMarker = L.marker([poi.latitude, poi.longitude], {icon: blueIcon}).addTo(map);
-            
-            // Center map on the POI
-            map.setView([poi.latitude, poi.longitude], 16);
-            
-            // Update UI for edit mode
-            document.getElementById("save-poi-btn").textContent = "Update POI";
-            document.getElementById("cancel-edit-btn").style.display = "inline-block";
-        })
-        .catch(error => {
-            console.error('Error fetching POI details:', error);
-            alert('Failed to load POI details for editing.');
-        });
-}
-
-// Cancel editing
-function cancelEdit() {
-    editMode = false;
-    
-    // Clear form
-    document.getElementById("poi-form").reset();
-    document.getElementById("poi-id").value = "";
-    
-    // Remove temporary marker
-    if (selectedMarker) {
-        map.removeLayer(selectedMarker);
-        selectedMarker = null;
-    }
-    
-    // Update UI
-    document.getElementById("save-poi-btn").textContent = "Save POI";
-    document.getElementById("cancel-edit-btn").style.display = "none";
-}
-
-// Delete a POI
-function deletePOI(poiId) {
-    if (!confirm("Are you sure you want to delete this point of interest?")) {
-        return;
-    }
-    
-    fetch(`/api/pois/${poiId}`, {
-        method: 'DELETE'
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        // If we were editing this POI, cancel edit mode
-        if (editMode && document.getElementById("poi-id").value == poiId) {
-            cancelEdit();
-        }
-        
-        // Reload POIs to refresh the map and list
-        loadPOIs();
-    })
-    .catch(error => {
-        console.error('Error deleting POI:', error);
-        alert('Failed to delete the point of interest. Please try again.');
-    });
-}
-
-// Filter POIs based on search input
-function filterPOIs() {
-    const searchText = document.getElementById("poi-search").value.toLowerCase();
-    
-    fetch('/api/pois')
-        .then(response => response.json())
-        .then(pois => {
-            const filteredPOIs = pois.filter(poi => {
-                return poi.name.toLowerCase().includes(searchText) || 
-                       (poi.category && poi.category.toLowerCase().includes(searchText)) ||
-                       (poi.description && poi.description.toLowerCase().includes(searchText));
-            });
-            
-            updatePOIList(filteredPOIs);
-        })
-        .catch(error => console.error('Error filtering POIs:', error));
-}
-
-// Clear all isochrone layers
-function clearIsochrones() {
-    isochroneLayers.forEach(layer => map.removeLayer(layer));
-    isochroneLayers = [];
-}
-
-// Fetch and display isochrones
-function fetchAndDisplayIsochrones(lat, lng, customTimeMinutes = null) {
-    // Show loading message
-    console.log("Fetching isochrones for", lat, lng, customTimeMinutes ? `with custom time: ${customTimeMinutes} min` : '');
-    
-    let request = new XMLHttpRequest();
-
-    request.open('POST', "https://api.openrouteservice.org/v2/isochrones/driving-car");
-
-    request.setRequestHeader('Accept', 'application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8');
-    request.setRequestHeader('Content-Type', 'application/json');
-    request.setRequestHeader('Authorization', '5b3ce3597851110001cf6248e0fbfa8c07af43458da778a226442451');
-
-    request.onreadystatechange = function () {
-    if (this.readyState === 4) {
-        console.log('Status:', this.status);
-        console.log('Headers:', this.getAllResponseHeaders());
-        console.log('Body:', this.responseText);
-    }
-    };
-
-    const body = '{"locations":[[8.681495,49.41461]],"range":[300,600,900,2700],"range_type":"time"}';
-
-    request.send(body);
-    
-    // Fetch isochrones from API
-    fetch(request)
-        .then(response => response.json())
-        .then(data => {
-            // Check if we got valid GeoJSON
-            if (data.type === 'FeatureCollection' && data.features) {
->>>>>>> 5e4fdd0 (commit for rebase)
                 // Clear existing isochrones
                 clearIsochrones();
                 
@@ -246,7 +54,6 @@ function fetchAndDisplayIsochrones(lat, lng, customTimeMinutes = null) {
                                 fillOpacity: 0.2,
                                 weight: 2,
                                 opacity: 0.7
-<<<<<<< HEAD
                             }
                         }).addTo(map);
                         
@@ -259,18 +66,6 @@ function fetchAndDisplayIsochrones(lat, lng, customTimeMinutes = null) {
                         
                         // Store for later removal
                         isochroneLayers.push(isoLayer);
-=======
-                            };
-                        }
-                    }).addTo(map);
-                    
-                    // Add tooltip with time information
-                    const timeMinutes = feature.properties.time_minutes || Math.round(feature.properties.value * 60);
-                    isoLayer.bindTooltip(`${timeMinutes} minutes`, {
-                        permanent: false,
-                        direction: 'center',
-                        className: 'isochrone-tooltip'
->>>>>>> 5e4fdd0 (commit for rebase)
                     });
                     isochronesShowing = true; // Set flag when isochrones are displayed
                 }
@@ -363,13 +158,6 @@ function fetchAndDisplayIsochrones(lat, lng, customTimeMinutes = null) {
         markers.push(marker);
 
         if (isochroneCircle) map.removeLayer(isochroneCircle);
-        isochroneCircle = L.circle([lat, lng], {
-            radius,
-            color: '#00ffa3',
-            fillColor: '#00ffa3',
-            fillOpacity: 0.1,
-            weight: 2
-        }).addTo(map);
 
         if (editingItem) {
             editingItem.marker.remove();
@@ -401,7 +189,7 @@ function fetchAndDisplayIsochrones(lat, lng, customTimeMinutes = null) {
 
         item.querySelector('.btn-edit').addEventListener('click', () => {
             document.getElementById('poi-name').value = name;
-            document.getElementById('poi-category').value = category;
+            document.getElementById('poi-category').value = category;      
             document.getElementById('poi-description').value = desc;
             document.getElementById('poi-latitude').value = lat;
             document.getElementById('poi-longitude').value = lng;
@@ -409,13 +197,7 @@ function fetchAndDisplayIsochrones(lat, lng, customTimeMinutes = null) {
             if (isochroneCircle) map.removeLayer(isochroneCircle);
             if (selectedMarker) map.removeLayer(selectedMarker);
 
-            isochroneCircle = L.circle([lat, lng], {
-                radius,
-                color: '#00ffa3',
-                fillColor: '#00ffa3',
-                fillOpacity: 0.1,
-                weight: 2
-            }).addTo(map);
+
 
             selectedMarker = L.marker([lat, lng]).addTo(map)
                 .bindPopup("Editing location").openPopup();
