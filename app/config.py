@@ -8,7 +8,7 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'your-secret-key'
     
     # Database configuration
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///app.db'
+    SQLALCHEMY_DATABASE_URI = 'postgresql://postgres:alexia@localhost:5432/projectmds'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Third-party API keys

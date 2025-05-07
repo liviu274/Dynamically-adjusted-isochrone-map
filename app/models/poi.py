@@ -2,7 +2,9 @@ from app import db
 from datetime import datetime
 
 class PointOfInterest(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    tablename = 'point_of_interest'
+
+    id_poi = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     latitude = db.Column(db.Float, nullable=False)
     longitude = db.Column(db.Float, nullable=False)
@@ -15,7 +17,7 @@ class PointOfInterest(db.Model):
     
     def to_dict(self):
         return {
-            'id': self.id,
+            'id_poi': self.id_poi,
             'name': self.name,
             'latitude': self.latitude,
             'longitude': self.longitude,
