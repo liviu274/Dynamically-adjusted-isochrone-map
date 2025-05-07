@@ -3,6 +3,23 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
+    // Complete replacement of the default icon settings
+    L.Icon.Default.mergeOptions({
+        iconUrl: '/static/images/pin.png',
+        iconRetinaUrl: '/static/images/pin.png',  // Same image for retina displays
+        iconSize: [32, 32],  // Adjust size to match your pin image dimensions
+        iconAnchor: [16, 32], // Bottom center of the icon
+        popupAnchor: [0, -32], // Popup appears above the icon
+        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+        shadowSize: [41, 41],
+        shadowAnchor: [12, 41]
+    });
+
+    // Force Leaflet to reload the icon defaults
+    delete L.Icon.Default.prototype._getIconUrl;
+    L.Icon.Default.imagePath = '';
+    L.Icon.Default._getIconUrl = L.Icon.Default.prototype._getIconUrl;
+
     let isochroneCircle = null;
     let selectedMarker = null;
     const markers = [];
@@ -81,17 +98,6 @@ const map = L.map('map').setView([45.76, 21.23], 13);
 
         if (isochroneCircle) map.removeLayer(isochroneCircle);
         if (selectedMarker) map.removeLayer(selectedMarker);
-
-        const minutes = parseInt(document.getElementById('time-range').value);
-        const radius = minutes * 100;
-
-        isochroneCircle = L.circle([lat, lng], {
-            radius,
-            color: '#00ffa3',
-            fillColor: '#00ffa3',
-            fillOpacity: 0.1,
-            weight: 2
-        }).addTo(map);
 
         selectedMarker = L.marker([lat, lng]).addTo(map).bindPopup("Selected location").openPopup();
     });
@@ -252,23 +258,6 @@ const map = L.map('map').setView([45.76, 21.23], 13);
     map.on('contextmenu', function(e) {
         clearIsochrones();
         fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
-    });
-
-    // Create circle visualization on click
-    map.on('click', function(e) {
-        // Your existing click handler still runs, but we'll add circles too
-        const minutes = parseInt(document.getElementById('time-range').value);
-        const radius = minutes * 100;
-        
-        // Add circle visualization if needed
-        if (window.isochroneCircle) map.removeLayer(window.isochroneCircle);
-        window.isochroneCircle = L.circle([e.latlng.lat, e.latlng.lng], {
-            radius,
-            color: '#00ffa3',
-            fillColor: '#00ffa3',
-            fillOpacity: 0.1,
-            weight: 2
-        }).addTo(map);
     });
 
 
