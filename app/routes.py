@@ -1,14 +1,13 @@
 import requests
 from flask import request, jsonify, Blueprint, render_template
-from app.config import Config
 
-main_bp = Blueprint('main', __name__)
+main = Blueprint('main', __name__)
 
-@main_bp.route('/')
+@main.route('/')
 def index():
-    return render_template('index.html', foursquare_api_key=Config.FOURSQUARE_API_KEY)
+    return render_template('index.html')
 
-@main_bp.route('/api/isochrones', methods=['POST'])
+@main.route('/api/isochrones', methods=['POST'])
 def isochrones_proxy():
     """Proxy endpoint for OpenRouteService isochrones API to avoid CORS issues"""
     try:

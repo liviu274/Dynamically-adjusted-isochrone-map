@@ -36,40 +36,54 @@ const map = L.map('map').setView([45.76, 21.23], 13);
     };
 
     // Function to fetch and display isochrones
-    // Function to fetch and display isochrones
     const fetchAndDisplayIsochrones = (lat, lng, customTimeMinutes = null) => {
-        // Initialize time ranges properly
-        let timeRanges = [300];
+        // Force convert customTimeMinutes to a number
         if (customTimeMinutes) {
-            timeRanges.push(customTimeMinutes * 60); // Properly add custom time to array
-            console.debug('Custom time added to timeRanges:', customTimeMinutes * 60);
-            console.log('Custom time range added:', customTimeMinutes * 60);
+            customTimeMinutes = parseInt(customTimeMinutes);
+            console.log("Custom time added:", customTimeMinutes);
         }
-        else {
-        console.debug('No time added');
-        console.log('No time added');
-        // alert("No time added");
+        
+        console.log('fetchAndDisplayIsochrones called with:');
+        console.log('lat:', lat, 'lng:', lng);
+        console.log('customTimeMinutes (parsed):', customTimeMinutes);
+        
+        // Initialize time ranges array to include both default and custom
+        let timeRanges = [];
+        
+        // Always include a default 5 minute isochrone
+        timeRanges.push(300); // 5 minutes = 300 seconds
+        
+        // Add custom time if it's different from default and valid
+        if (customTimeMinutes && !isNaN(customTimeMinutes) && customTimeMinutes !== 5) {
+            // Convert minutes to seconds for the API
+            const timeSeconds = customTimeMinutes * 60;
+            timeRanges.push(timeSeconds);
+            console.log('Added custom time (seconds):', timeSeconds);
         }
-        // Check if the JavaScript file is connected to the HTML
-        // alert("JavaScript file is successfully connected to the HTML.");
+        
+        console.log('Final time ranges array:', timeRanges);
+        
+        const requestBody = {
+            locations: [[lng, lat]],
+            range: timeRanges,
+            range_type: "time"
+        };
+        
+        console.log('API request body:', JSON.stringify(requestBody));
 
-
-
-        fetch("https://api.openrouteservice.org/v2/isochrones/driving-car", {
+        // Use our proxy endpoint instead of calling the API directly
+        fetch("/api/isochrones", {
             method: 'POST',
             headers: {
-                'Accept': 'application/json, application/geo+json, application/gpx+xml, img/png; charset=utf-8',
                 'Content-Type': 'application/json',
-                'Authorization': '5b3ce3597851110001cf6248e0fbfa8c07af43458da778a226442451'
             },
-            body: JSON.stringify({
-                locations: [[lng, lat]],
-                range: timeRanges,
-                range_type: "time"
-            })
+            body: JSON.stringify(requestBody)
         })
         .then(response => {
             if (!response.ok) {
+                if (response.status === 429) {
+                    throw new Error("Rate limit exceeded. Please try again later.");
+                }
                 throw new Error(`API error: ${response.status}`);
             }
             return response.json();
@@ -78,21 +92,26 @@ const map = L.map('map').setView([45.76, 21.23], 13);
             // Clear existing isochrones
             clearIsochrones();
             
-            // Add isochrones to map
-            if (data.type === 'FeatureCollection' && data.features) {
-                data.features.forEach(feature => {
+            // Process the response
+            if (data.type === 'FeatureCollection' && data.features && data.features.length > 0) {
+                console.log(`Processing ${data.features.length} isochrone features`);
+                
+                data.features.forEach((feature, index) => {
+                    // Extract minutes from feature properties (value is in seconds)
+                    const seconds = feature.properties.value;
+                    const minutes = Math.round(seconds / 60);
+                    
+                    console.log(`Feature ${index}: ${minutes} minutes`);
+                    
                     // Determine color based on time range
                     let color;
-                    // Extract minutes from feature properties (value is in seconds)
-                    const minutes = Math.round(feature.properties.value / 60);
-                    if (minutes == 5) {
-                        color = '#9b5de5'; // Purple
+                    if (minutes === 5) {
+                        color = '#9b5de5'; // Purple for default 5 min 
+                    } else {
+                        color = '#e63946'; // Red for custom time
                     }
-                    else {
-                        color = '#e63946'; // Red
-                    }
-
-                    // Create the isochrone layer
+                    
+                    // Create isochrone layer with appropriate color
                     const isoLayer = L.geoJSON(feature, {
                         style: {
                             color: color,
@@ -103,22 +122,25 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                         }
                     }).addTo(map);
                     
-                    // Add tooltip with time information
-                    // const timeMinutes = feature.properties.time_minutes || Math.round(feature.properties.value / 60);
-                    isoLayer.bindTooltip(`isochrome map (default 5 minutes)`, {
+                    // Add tooltip showing the time
+                    isoLayer.bindTooltip(`${minutes} minute travel time`, {
                         permanent: false,
                         direction: 'center'
                     });
                     
-                    // Store for later removal
                     isochroneLayers.push(isoLayer);
                 });
+                
                 isochronesShowing = true;
+            } else {
+                console.error('No features found in API response');
+                console.log('API response data:', data);
+                showToast('No travel time data available for this location.');
             }
         })
         .catch(error => {
             console.error('Error fetching isochrones:', error);
-            showToast('Failed to load travel times. Please try again.');
+            showToast(error.message || 'Failed to load travel times. Please try again.');
         });
     };
     
@@ -183,12 +205,6 @@ map.on('click', (e) => {
         selectedMarker = L.marker([lat, lng]).addTo(map).bindPopup("Selected location").openPopup();
     });
 
-    // Add context menu for right-click on map
-    map.on('contextmenu', function(e) {
-        clearIsochrones();
-        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng); // No custom time added
-    });
-
     document.getElementById('time-range').addEventListener('input', function () {
         document.getElementById('time-val').textContent = this.value;
     });
@@ -235,9 +251,22 @@ map.on('click', (e) => {
                     travelTimeBtn.addEventListener('click', function() {
                         const btnLat = parseFloat(this.getAttribute('data-lat'));
                         const btnLng = parseFloat(this.getAttribute('data-lng'));
-                        const minutes = parseInt(document.getElementById('time-range').value);
+                        
+                        // Get a fresh value from the slider each time
+                        const timeSlider = document.getElementById('time-range');
+                        const minutes = parseInt(document.getElementById('time-val').textContent, 10);
+                        
+                        console.log('Travel time button clicked:');
+                        console.log('Button lat/lng:', btnLat, btnLng);
+                        console.log('Current slider value:', minutes);
+                        
+                        // Force refresh of the UI before proceeding
+                        document.getElementById('time-val').textContent = minutes;
+                        
                         fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
                     });
+                } else {
+                    console.error('Travel time button not found in popup');
                 }
             }, 100);
         });
@@ -286,8 +315,8 @@ item.innerHTML = `
             document.getElementById('poi-description').value = desc;
             document.getElementById('poi-latitude').value = lat;
             document.getElementById('poi-longitude').value = lng;
-            document.getElementById('poi-longitude').value = timeMinutes;
-
+            // Remove or fix the following line which is incorrect
+            // document.getElementById('poi-longitude').value = timeMinutes;
 
             if (isochroneCircle) map.removeLayer(isochroneCircle);
             if (selectedMarker) map.removeLayer(selectedMarker);
@@ -338,6 +367,10 @@ item.innerHTML = `
     // Add context menu for right-click on map
     map.on('contextmenu', function(e) {
         clearIsochrones();
+        // I don't want a second time radious on right-click
+
+        console.log('Right-click context menu:');
+        console.log('Coordinates:', e.latlng.lat, e.latlng.lng);
         fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
     });
 
@@ -408,173 +441,213 @@ item.innerHTML = `
                 clearSelectedMarker();
             }
         });
-    });
 
-// Add this function after your existing bounds declaration
-function updateBoundsFromPOIs() {
-    if (markers.length === 0) return; // No POIs to update from
-    
-    // Get all POI coordinates
-    const lats = markers.map(marker => marker.getLatLng().lat);
-    const lngs = markers.map(marker => marker.getLatLng().lng);
-    
-    // Calculate new bounds with padding
-    const padding = 0.02; // Approximately 2km padding
-    const newBounds = [
-        [Math.min(...lats) - padding, Math.min(...lngs) - padding],
-        [Math.max(...lats) + padding, Math.max(...lngs) + padding]
-    ];
-    
-    // Update the boundary rectangle
-    if (boundaryRectangle) {
-        boundaryRectangle.setBounds(newBounds);
-    }
-    
-    // Update the bounds constant
-    bounds[0] = newBounds[0];
-    bounds[1] = newBounds[1];
-    
-    // Fit map to new bounds
-    map.fitBounds(boundaryRectangle.getBounds());
-    
-    showToast("Map boundaries updated based on POIs");
-}
+      // Add this function after your existing bounds declaration
+      function updateBoundsFromPOIs() {
+          if (markers.length === 0) return; // No POIs to update from
 
-// Add a button to trigger the update
-const updateBoundsButton = document.createElement('button');
-updateBoundsButton.className = 'btn btn-primary mb-3';
-updateBoundsButton.innerHTML = '<i class="bi bi-arrows-angle-expand"></i> Update Map Bounds';
-updateBoundsButton.onclick = updateBoundsFromPOIs;
+          // Get all POI coordinates
+          const lats = markers.map(marker => marker.getLatLng().lat);
+          const lngs = markers.map(marker => marker.getLatLng().lng);
 
-// Add the button to your controls container
-document.querySelector('.controls').prepend(updateBoundsButton);
+          // Calculate new bounds with padding
+          const padding = 0.02; // Approximately 2km padding
+          const newBounds = [
+              [Math.min(...lats) - padding, Math.min(...lngs) - padding],
+              [Math.max(...lats) + padding, Math.max(...lngs) + padding]
+          ];
 
-// Add this after your existing bounds declaration
-let currentSelectedBounds = null; // Add this at the top with other global variables
+          // Update the boundary rectangle
+          if (boundaryRectangle) {
+              boundaryRectangle.setBounds(newBounds);
+          }
 
-function viewSelectedPOIs() {
-    // Remove previous selection if it exists
-    if (currentSelectedBounds) {
-        map.removeLayer(currentSelectedBounds);
-        currentSelectedBounds = null;
-    }
+          // Update the bounds constant
+          bounds[0] = newBounds[0];
+          bounds[1] = newBounds[1];
 
-    const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
-    
-    if (checkedBoxes.length === 0) {
-        showToast("Please select at least one location");
-        return;
-    }
+          // Fit map to new bounds
+          map.fitBounds(boundaryRectangle.getBounds());
 
-    // Hide all markers first
-    markers.forEach(marker => {
-        marker.setOpacity(0.2);
-    });
+          showToast("Map boundaries updated based on POIs");
+      }
 
-    // Hide the original orange boundary
-    boundaryRectangle.setStyle({ opacity: 0, fillOpacity: 0 });
+      // Add a button to trigger the update
+      const updateBoundsButton = document.createElement('button');
+      updateBoundsButton.className = 'btn btn-primary mb-3';
+      updateBoundsButton.innerHTML = '<i class="bi bi-arrows-angle-expand"></i> Update Map Bounds';
+      updateBoundsButton.onclick = updateBoundsFromPOIs;
 
-    // Show only selected markers and collect their coordinates
-    const selectedCoords = [];
-    checkedBoxes.forEach(checkbox => {
-        const lat = parseFloat(checkbox.dataset.lat);
-        const lng = parseFloat(checkbox.dataset.lng);
-        selectedCoords.push({ lat, lng });
-        
-        // Find and highlight the corresponding marker
-        const marker = markers.find(m => {
-            const pos = m.getLatLng();
-            return pos.lat === lat && pos.lng === lng;
-        });
-        if (marker) {
-            marker.setOpacity(1);
-        }
-    });
+      // Add the button to your controls container
+      document.querySelector('.controls').prepend(updateBoundsButton);
 
-    // Calculate the center point
-    const lats = selectedCoords.map(coord => coord.lat);
-    const lngs = selectedCoords.map(coord => coord.lng);
-    const centerLat = (Math.max(...lats) + Math.min(...lats)) / 2;
-    const centerLng = (Math.max(...lngs) + Math.min(...lngs)) / 2;
+      // Add this after your existing bounds declaration
+      let currentSelectedBounds = null; // Add this at the top with other global variables
 
-    // Calculate the spread of selected POIs
-    const latSpread = Math.max(...lats) - Math.min(...lats);
-    const lngSpread = Math.max(...lngs) - Math.min(...lngs);
+      function viewSelectedPOIs() {
+          // Remove previous selection if it exists
+          if (currentSelectedBounds) {
+              map.removeLayer(currentSelectedBounds);
+              currentSelectedBounds = null;
+          }
 
-    // Reduce padding for tighter zoom (changed from 0.5 to 0.2)
-    const padding = 0.2;
-    const adjustedLatSpread = latSpread * (1 + padding);
-    const adjustedLngSpread = lngSpread * (1 + padding);
+          const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
 
-    // Create new bounds based on the POI spread
-    const newBounds = [
-        [centerLat - adjustedLatSpread/2, centerLng - adjustedLngSpread/2],
-        [centerLat + adjustedLatSpread/2, centerLng + adjustedLngSpread/2]
-    ];
+          if (checkedBoxes.length === 0) {
+              showToast("Please select at least one location");
+              return;
+          }
 
-    // Create and add the green boundary
-    currentSelectedBounds = L.rectangle(newBounds, {
-        color: "#4CAF50",
-        weight: 3,
-        fillOpacity: 0.15,
-        dashArray: '10, 15'
-    }).addTo(map);
+          // Hide all markers first
+          markers.forEach(marker => {
+              marker.setOpacity(0.2);
+          });
 
-    // Fit map to the new bounds with tighter zoom
-    map.flyToBounds(newBounds, {
-        margin: [10, 10], // Reduced padding from 30 to 10
-        duration: 1.5,
-        animate: true,
-        maxZoom: 20 // Increased max zoom from 17 to 18
-    });
+          // Hide the original orange boundary
+          boundaryRectangle.setStyle({ opacity: 0, fillOpacity: 0 });
 
-    // Add reset button
-    let resetButton = document.querySelector('#reset-bounds-button');
-    if (!resetButton) {
-        resetButton = document.createElement('button');
-        resetButton.id = 'reset-bounds-button';
-        resetButton.className = 'btn btn-warning position-absolute m-2';
-        resetButton.style.zIndex = '1000';
-        resetButton.style.right = '10px';
-        resetButton.style.top = '10px';
-        resetButton.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Reset View';
-        resetButton.onclick = () => {
-            markers.forEach(marker => marker.setOpacity(1));
-            boundaryRectangle.setStyle({ opacity: 1, fillOpacity: 0.1 });
-            if (currentSelectedBounds) {
-                map.removeLayer(currentSelectedBounds);
-                currentSelectedBounds = null;
-            }
-            resetButton.remove();
-            map.fitBounds(bounds);
-        };
-        document.querySelector('#map').appendChild(resetButton);
-    }
-}
+          // Show only selected markers and collect their coordinates
+          const selectedCoords = [];
+          checkedBoxes.forEach(checkbox => {
+              const lat = parseFloat(checkbox.dataset.lat);
+              const lng = parseFloat(checkbox.dataset.lng);
+              selectedCoords.push({ lat, lng });
 
-// Add this function to handle the view selected POIs button visibility
-function handleViewSelectedButton() {
-    const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
-    let viewSelectedButton = document.querySelector('#view-selected-button');
-    
-    if (checkedBoxes.length > 0) {
-        // Create button if it doesn't exist
-        if (!viewSelectedButton) {
-            viewSelectedButton = document.createElement('button');
-            viewSelectedButton.id = 'view-selected-button';
-            viewSelectedButton.className = 'btn btn-success mb-3 ms-2';
-            viewSelectedButton.innerHTML = '<i class="bi bi-eye-fill"></i> View Selected POIs';
-            viewSelectedButton.onclick = viewSelectedPOIs;
-            document.querySelector('.controls').prepend(viewSelectedButton);
-        }
-    } else {
-        // Remove button if no checkboxes are selected
-        if (viewSelectedButton) {
-            viewSelectedButton.remove();
-        }
-    }
-}
+              // Find and highlight the corresponding marker
+              const marker = markers.find(m => {
+                  const pos = m.getLatLng();
+                  return pos.lat === lat && pos.lng === lng;
+              });
+              if (marker) {
+                  marker.setOpacity(1);
+              }
+          });
 
-// Modify your POI item creation code to add checkbox event listener
-// Find where you create the POI item and add this after the checkbox HTML:
-item.querySelector('.poi-checkbox').addEventListener('change', handleViewSelectedButton);
+          // Calculate the center point
+          const lats = selectedCoords.map(coord => coord.lat);
+          const lngs = selectedCoords.map(coord => coord.lng);
+          const centerLat = (Math.max(...lats) + Math.min(...lats)) / 2;
+          const centerLng = (Math.max(...lngs) + Math.min(...lngs)) / 2;
+
+          // Calculate the spread of selected POIs
+          const latSpread = Math.max(...lats) - Math.min(...lats);
+          const lngSpread = Math.max(...lngs) - Math.min(...lngs);
+
+          // Reduce padding for tighter zoom (changed from 0.5 to 0.2)
+          const padding = 0.2;
+          const adjustedLatSpread = latSpread * (1 + padding);
+          const adjustedLngSpread = lngSpread * (1 + padding);
+
+          // Create new bounds based on the POI spread
+          const newBounds = [
+              [centerLat - adjustedLatSpread/2, centerLng - adjustedLngSpread/2],
+              [centerLat + adjustedLatSpread/2, centerLng + adjustedLngSpread/2]
+          ];
+
+          // Create and add the green boundary
+          currentSelectedBounds = L.rectangle(newBounds, {
+              color: "#4CAF50",
+              weight: 3,
+              fillOpacity: 0.15,
+              dashArray: '10, 15'
+          }).addTo(map);
+
+          // Fit map to the new bounds with tighter zoom
+          map.flyToBounds(newBounds, {
+              margin: [10, 10], // Reduced padding from 30 to 10
+              duration: 1.5,
+              animate: true,
+              maxZoom: 20 // Increased max zoom from 17 to 18
+          });
+
+          // Add reset button
+          let resetButton = document.querySelector('#reset-bounds-button');
+          if (!resetButton) {
+              resetButton = document.createElement('button');
+              resetButton.id = 'reset-bounds-button';
+              resetButton.className = 'btn btn-warning position-absolute m-2';
+              resetButton.style.zIndex = '1000';
+              resetButton.style.right = '10px';
+              resetButton.style.top = '10px';
+              resetButton.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Reset View';
+              resetButton.onclick = () => {
+                  markers.forEach(marker => marker.setOpacity(1));
+                  boundaryRectangle.setStyle({ opacity: 1, fillOpacity: 0.1 });
+                  if (currentSelectedBounds) {
+                      map.removeLayer(currentSelectedBounds);
+                      currentSelectedBounds = null;
+                  }
+                  resetButton.remove();
+                  map.fitBounds(bounds);
+              };
+              document.querySelector('#map').appendChild(resetButton);
+          }
+      }
+
+      // Add this function to handle the view selected POIs button visibility
+      function handleViewSelectedButton() {
+          const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
+          let viewSelectedButton = document.querySelector('#view-selected-button');
+
+          if (checkedBoxes.length > 0) {
+              // Create button if it doesn't exist
+              if (!viewSelectedButton) {
+                  viewSelectedButton = document.createElement('button');
+                  viewSelectedButton.id = 'view-selected-button';
+                  viewSelectedButton.className = 'btn btn-success mb-3 ms-2';
+                  viewSelectedButton.innerHTML = '<i class="bi bi-eye-fill"></i> View Selected POIs';
+                  viewSelectedButton.onclick = viewSelectedPOIs;
+                  document.querySelector('.controls').prepend(viewSelectedButton);
+              }
+          } else {
+              // Remove button if no checkboxes are selected
+              if (viewSelectedButton) {
+                  viewSelectedButton.remove();
+              }
+          }
+      }
+
+      // Modify your POI item creation code to add checkbox event listener
+      // Find where you create the POI item and add this after the checkbox HTML:
+      // Add this to where you create the poi item in the poi-form submit handler
+      // Immediately after creating the item but before adding event listeners:
+      if (!item.querySelector('.poi-checkbox')) {
+          // Add checkbox to the item if it doesn't exist
+          const checkboxDiv = document.createElement('div');
+          checkboxDiv.className = 'form-check mb-2';
+          checkboxDiv.innerHTML = `
+              <input class="form-check-input poi-checkbox" type="checkbox" 
+                  data-lat="${lat}" data-lng="${lng}" id="poiCheck${markers.length}">
+              <label class="form-check-label" for="poiCheck${markers.length}">
+                  Select for group view
+              </label>
+          `;
+          item.insertBefore(checkboxDiv, item.firstChild);
+      }
+      item.querySelector('.poi-checkbox').addEventListener('change', handleViewSelectedButton);
+
+      // Add a function to safely add event listeners (from main branch)
+      function addSafeEventListener(element, event, handler) {
+          // First remove any existing listeners of the same type (optional)
+          element.removeEventListener(event, handler);
+          // Then add the new listener
+          element.addEventListener(event, handler);
+          console.log(`Event listener '${event}' added to:`, element);
+      }
+
+      const timeRangeSlider = document.getElementById('time-range');
+      if (timeRangeSlider) {
+          const sliderHandler = function() {
+              const currentValue = parseInt(this.value);
+              console.log('Slider changed to:', currentValue);
+              document.getElementById('time-val').textContent = currentValue;
+          };
+
+          addSafeEventListener(timeRangeSlider, 'input', sliderHandler);
+      }
+
+      // Add traffic indicator badge (from main branch)
+      const trafficBadge = document.createElement('div');
+      trafficBadge.className = 'traffic-indicator';
+      trafficBadge.innerHTML = '<i class="bi bi-car-front"></i> Real-time traffic';
+      document.querySelector('.map-container').appendChild(trafficBadge);

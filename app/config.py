@@ -19,3 +19,6 @@ class Config:
     TRAVEL_TIME_API_KEY = os.environ.get('TRAVEL_TIME_API_KEY') or '5b3ce3597851110001cf62484a5733366a7a4fb19761f30707d4e938'
     # Optional: Google Maps API for more precise distance calculations
     GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY') or ''
+    
+    # Real-time traffic data
+    USE_REAL_TIME_TRAFFIC = os.environ.get('USE_REAL_TIME_TRAFFIC', 'true').lower() == 'true'
