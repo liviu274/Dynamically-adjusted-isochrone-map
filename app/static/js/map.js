@@ -190,7 +190,6 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         }
 
         const minutes = parseInt(document.getElementById('time-range').value);
-        const radius = minutes * 100;
 
         // Create popup content with travel time button
         const popupContent = `
@@ -280,8 +279,6 @@ const map = L.map('map').setView([45.76, 21.23], 13);
 
             if (isochroneCircle) map.removeLayer(isochroneCircle);
             if (selectedMarker) map.removeLayer(selectedMarker);
-
-
 
             selectedMarker = L.marker([lat, lng]).addTo(map)
                 .bindPopup("Editing location").openPopup();
@@ -424,3 +421,10 @@ const map = L.map('map').setView([45.76, 21.23], 13);
             addSafeEventListener(timeRangeSlider, 'input', sliderHandler);
         }
     });
+
+    // Add after creating isochrone layer:
+    const trafficBadge = document.createElement('div');
+    trafficBadge.className = 'traffic-indicator';
+    trafficBadge.innerHTML = '<i class="bi bi-car-front"></i> Real-time traffic';
+    document.querySelector('.map-container').appendChild(trafficBadge);
+
