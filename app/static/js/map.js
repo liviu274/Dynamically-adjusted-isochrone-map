@@ -368,3 +368,9 @@ const map = L.map('map').setView([45.76, 21.23], 13);
             }
         });
     });
+
+    // Add after creating isochrone layer:
+    const trafficBadge = document.createElement('div');
+    trafficBadge.className = 'traffic-indicator';
+    trafficBadge.innerHTML = '<i class="bi bi-car-front"></i> Real-time traffic';
+    document.querySelector('.map-container').appendChild(trafficBadge);
