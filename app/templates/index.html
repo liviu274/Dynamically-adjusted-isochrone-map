@@ -141,6 +141,99 @@
             background: var(--neon-primary);
             box-shadow: 0 0 10px rgba(0, 255, 163, 0.5);
         }
+
+        /* Rate limit error message styling */
+        .rate-limit-alert {
+            background: rgba(12, 12, 18, 0.9);
+            border-left: 4px solid var(--neon-secondary); 
+            color: var(--text-primary);
+            padding: 15px 20px;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 0 20px rgba(0, 136, 255, 0.4);
+            margin-top: -10px;
+            position: relative;
+            z-index: 1000;
+            backdrop-filter: blur(8px);
+            transition: opacity 0.5s ease-in-out;
+        }
+        
+        .rate-limit-alert .alert-content {
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+        }
+        
+        .rate-limit-alert i {
+            color: var(--neon-secondary);
+            font-size: 1.2rem;
+            margin-right: 12px;
+        }
+        
+        .countdown-timer {
+            background: var(--neon-secondary);
+            color: var(--dark-bg);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            margin: 0 4px;
+            display: inline-block;
+            min-width: 28px;
+            text-align: center;
+        }
+
+        .btn-close {
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            opacity: 0.7;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-close:hover {
+            opacity: 1;
+            color: var(--neon-primary);
+        }
+
+        .d-none {
+            display: none !important;
+        }
+
+        /* Add this to your existing styles */
+        .isochrone-tooltip {
+            background: rgba(12, 12, 18, 0.85);
+            border: 1px solid var(--neon-secondary);
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-weight: 600;
+            box-shadow: 0 0 15px rgba(0, 136, 255, 0.4);
+            opacity: 0.95;
+        }
+        
+        .isochrone-tooltip .leaflet-tooltip-content {
+            font-size: 1.1rem;
+        }
+        
+        .isochrone-tooltip::before {
+            display: none; /* Remove the tooltip arrow */
+        }
+        
+        .time-tooltip {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Add this new style for the neon text */
+        .neon-text {
+            color: var(--neon-primary);
+            text-shadow: 0 0 8px rgba(0, 255, 163, 0.6);
+            font-weight: 700;
+        }
     </style>
 </head>
 <body>
@@ -159,7 +252,15 @@
             <div class="map-container">
                 <div id="map"></div>
             </div>
-
+            
+            <div id="rate-limit-error" class="rate-limit-alert mb-4 d-none">
+                <div class="alert-content">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <span>API rate limit exceeded. Please wait 60 seconds before making more requests.</span>
+                </div>
+                <button id="dismiss-rate-limit" class="btn-close"></button>
+            </div>
+            
             <div class="controls">
                 <h4 class="mb-4"><i class="bi bi-geo-alt-fill me-2" style="color: var(--neon-primary)"></i>Add Point of Interest</h4>
                 <form id="poi-form">
