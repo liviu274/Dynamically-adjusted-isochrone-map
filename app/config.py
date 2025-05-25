@@ -16,6 +16,6 @@ class Config:
     # Foursquare API - used for venue discovery and POI data
     FOURSQUARE_API_KEY = os.environ.get('FOURSQUARE_API_KEY') or 'fsq3UNI6ZxxsJMSZPXlqzK+mq9kMJPpR/HWocd0Ot9XpkbM='
     # Travel time API - for calculating times between locations (OpenRouteService or similar)
-    TRAVEL_TIME_API_KEY = os.environ.get('TRAVEL_TIME_API_KEY') or '5b3ce3597851110001cf6248e0fbfa8c07af43458da778a226442451'
+    TRAVEL_TIME_API_KEY = os.environ.get('TRAVEL_TIME_API_KEY') or '5b3ce3597851110001cf62484a5733366a7a4fb19761f30707d4e938'
     # Optional: Google Maps API for more precise distance calculations
     GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY') or ''

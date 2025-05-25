@@ -137,6 +137,41 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         }
     }
 
+    // Add this after the map initialization code
+const bounds = [
+    [45.70, 21.15], // Southwest corner
+    [45.82, 21.31]  // Northeast corner
+];
+
+const boundaryRectangle = L.rectangle(bounds, {
+    color: "#ff7800",
+    weight: 2,
+    fillOpacity: 0.1,
+    dashArray: '5, 10',
+});
+
+boundaryRectangle.addTo(map);
+
+// Add validation when adding POIs
+map.on('click', (e) => {
+    const { lat, lng } = e.latlng;
+    
+    // Check if click is within bounds
+    if (lat < bounds[0][0] || lat > bounds[1][0] || 
+        lng < bounds[0][1] || lng > bounds[1][1]) {
+        showToast("Please select a location within Timișoara city limits");
+        return;
+    }
+    
+    document.getElementById('poi-latitude').value = lat;
+    document.getElementById('poi-longitude').value = lng;
+
+    if (isochroneCircle) map.removeLayer(isochroneCircle);
+    if (selectedMarker) map.removeLayer(selectedMarker);
+
+    selectedMarker = L.marker([lat, lng]).addTo(map).bindPopup("Selected location").openPopup();
+});
+
     map.on('click', (e) => {
         const { lat, lng } = e.latlng;
         document.getElementById('poi-latitude').value = lat;
@@ -217,19 +252,25 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         }
 
         const item = document.createElement('div');
-        item.className = 'poi-item';
-        item.innerHTML = `
-            <div class="d-flex justify-content-between align-items-start">
-                <div>
-                    <strong>${name}</strong><br>
-                    <small><i class="bi bi-tag-fill me-1"></i>${category}</small>
-                </div>
-                <div>
-                    <button class="btn btn-sm btn-outline-light btn-edit"><i class="bi bi-pencil-fill"></i></button>
-                    <button class="btn btn-sm btn-outline-danger btn-delete"><i class="bi bi-trash-fill"></i></button>
-                </div>
+item.className = 'poi-item';
+item.innerHTML = `
+    <div class="d-flex justify-content-between align-items-start">
+        <div class="d-flex align-items-center">
+            <input type="checkbox" class="poi-checkbox me-2" data-lat="${lat}" data-lng="${lng}">
+            <div>
+                <strong>${name}</strong><br>
+                <small><i class="bi bi-tag-fill me-1"></i>${category}</small>
             </div>
-        `;
+        </div>
+        <div>
+            <button class="btn btn-sm btn-outline-light btn-edit"><i class="bi bi-pencil-fill"></i></button>
+            <button class="btn btn-sm btn-outline-danger btn-delete"><i class="bi bi-trash-fill"></i></button>
+        </div>
+    </div>
+`;
+
+        const checkbox = item.querySelector('.poi-checkbox');
+        checkbox.addEventListener('change', handleViewSelectedButton);
 
         item.querySelector('.btn-delete').addEventListener('click', () => {
             marker.remove();
@@ -368,3 +409,172 @@ const map = L.map('map').setView([45.76, 21.23], 13);
             }
         });
     });
+
+// Add this function after your existing bounds declaration
+function updateBoundsFromPOIs() {
+    if (markers.length === 0) return; // No POIs to update from
+    
+    // Get all POI coordinates
+    const lats = markers.map(marker => marker.getLatLng().lat);
+    const lngs = markers.map(marker => marker.getLatLng().lng);
+    
+    // Calculate new bounds with padding
+    const padding = 0.02; // Approximately 2km padding
+    const newBounds = [
+        [Math.min(...lats) - padding, Math.min(...lngs) - padding],
+        [Math.max(...lats) + padding, Math.max(...lngs) + padding]
+    ];
+    
+    // Update the boundary rectangle
+    if (boundaryRectangle) {
+        boundaryRectangle.setBounds(newBounds);
+    }
+    
+    // Update the bounds constant
+    bounds[0] = newBounds[0];
+    bounds[1] = newBounds[1];
+    
+    // Fit map to new bounds
+    map.fitBounds(boundaryRectangle.getBounds());
+    
+    showToast("Map boundaries updated based on POIs");
+}
+
+// Add a button to trigger the update
+const updateBoundsButton = document.createElement('button');
+updateBoundsButton.className = 'btn btn-primary mb-3';
+updateBoundsButton.innerHTML = '<i class="bi bi-arrows-angle-expand"></i> Update Map Bounds';
+updateBoundsButton.onclick = updateBoundsFromPOIs;
+
+// Add the button to your controls container
+document.querySelector('.controls').prepend(updateBoundsButton);
+
+// Add this after your existing bounds declaration
+let currentSelectedBounds = null; // Add this at the top with other global variables
+
+function viewSelectedPOIs() {
+    // Remove previous selection if it exists
+    if (currentSelectedBounds) {
+        map.removeLayer(currentSelectedBounds);
+        currentSelectedBounds = null;
+    }
+
+    const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
+    
+    if (checkedBoxes.length === 0) {
+        showToast("Please select at least one location");
+        return;
+    }
+
+    // Hide all markers first
+    markers.forEach(marker => {
+        marker.setOpacity(0.2);
+    });
+
+    // Hide the original orange boundary
+    boundaryRectangle.setStyle({ opacity: 0, fillOpacity: 0 });
+
+    // Show only selected markers and collect their coordinates
+    const selectedCoords = [];
+    checkedBoxes.forEach(checkbox => {
+        const lat = parseFloat(checkbox.dataset.lat);
+        const lng = parseFloat(checkbox.dataset.lng);
+        selectedCoords.push({ lat, lng });
+        
+        // Find and highlight the corresponding marker
+        const marker = markers.find(m => {
+            const pos = m.getLatLng();
+            return pos.lat === lat && pos.lng === lng;
+        });
+        if (marker) {
+            marker.setOpacity(1);
+        }
+    });
+
+    // Calculate the center point
+    const lats = selectedCoords.map(coord => coord.lat);
+    const lngs = selectedCoords.map(coord => coord.lng);
+    const centerLat = (Math.max(...lats) + Math.min(...lats)) / 2;
+    const centerLng = (Math.max(...lngs) + Math.min(...lngs)) / 2;
+
+    // Calculate the spread of selected POIs
+    const latSpread = Math.max(...lats) - Math.min(...lats);
+    const lngSpread = Math.max(...lngs) - Math.min(...lngs);
+
+    // Reduce padding for tighter zoom (changed from 0.5 to 0.2)
+    const padding = 0.2;
+    const adjustedLatSpread = latSpread * (1 + padding);
+    const adjustedLngSpread = lngSpread * (1 + padding);
+
+    // Create new bounds based on the POI spread
+    const newBounds = [
+        [centerLat - adjustedLatSpread/2, centerLng - adjustedLngSpread/2],
+        [centerLat + adjustedLatSpread/2, centerLng + adjustedLngSpread/2]
+    ];
+
+    // Create and add the green boundary
+    currentSelectedBounds = L.rectangle(newBounds, {
+        color: "#4CAF50",
+        weight: 3,
+        fillOpacity: 0.15,
+        dashArray: '10, 15'
+    }).addTo(map);
+
+    // Fit map to the new bounds with tighter zoom
+    map.flyToBounds(newBounds, {
+        margin: [10, 10], // Reduced padding from 30 to 10
+        duration: 1.5,
+        animate: true,
+        maxZoom: 20 // Increased max zoom from 17 to 18
+    });
+
+    // Add reset button
+    let resetButton = document.querySelector('#reset-bounds-button');
+    if (!resetButton) {
+        resetButton = document.createElement('button');
+        resetButton.id = 'reset-bounds-button';
+        resetButton.className = 'btn btn-warning position-absolute m-2';
+        resetButton.style.zIndex = '1000';
+        resetButton.style.right = '10px';
+        resetButton.style.top = '10px';
+        resetButton.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Reset View';
+        resetButton.onclick = () => {
+            markers.forEach(marker => marker.setOpacity(1));
+            boundaryRectangle.setStyle({ opacity: 1, fillOpacity: 0.1 });
+            if (currentSelectedBounds) {
+                map.removeLayer(currentSelectedBounds);
+                currentSelectedBounds = null;
+            }
+            resetButton.remove();
+            map.fitBounds(bounds);
+        };
+        document.querySelector('#map').appendChild(resetButton);
+    }
+}
+
+// Add this function to handle the view selected POIs button visibility
+function handleViewSelectedButton() {
+    const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
+    let viewSelectedButton = document.querySelector('#view-selected-button');
+    
+    if (checkedBoxes.length > 0) {
+        // Create button if it doesn't exist
+        if (!viewSelectedButton) {
+            viewSelectedButton = document.createElement('button');
+            viewSelectedButton.id = 'view-selected-button';
+            viewSelectedButton.className = 'btn btn-success mb-3 ms-2';
+            viewSelectedButton.innerHTML = '<i class="bi bi-eye-fill"></i> View Selected POIs';
+            viewSelectedButton.onclick = viewSelectedPOIs;
+            document.querySelector('.controls').prepend(viewSelectedButton);
+        }
+    } else {
+        // Remove button if no checkboxes are selected
+        if (viewSelectedButton) {
+            viewSelectedButton.remove();
+        }
+    }
+}
+
+// Modify your POI item creation code to add checkbox event listener
+// Find where you create the POI item and add this after the checkbox HTML:
+item.querySelector('.poi-checkbox').addEventListener('change', handleViewSelectedButton);
