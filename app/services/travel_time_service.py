@@ -30,7 +30,7 @@ def get_isochrones(origin_lat, origin_lng, travel_times=[5, 10, 15], travel_mode
     url = "https://api.openrouteservice.org/v2/isochrones/" + travel_mode
     
     headers = {
-        'Authorization': f'Bearer {api_key}',  # OpenRouteService requires the "Bearer " prefix
+        'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json; charset=utf-8'
     }
     
@@ -39,7 +39,10 @@ def get_isochrones(origin_lat, origin_lng, travel_times=[5, 10, 15], travel_mode
         "range": ranges,
         "attributes": ["total_pop"],
         "location_type": "start",
-        "range_type": "time"
+        "range_type": "time",
+        "options": {
+            "traffic": "true"  # Enable real-time traffic consideration
+        }
     }
     
     try:
@@ -226,7 +229,10 @@ def get_travel_times(origin_lat, origin_lng, destinations=None):
         "locations": locations,
         "metrics": ["duration"],
         "sources": [0],  # Index of the origin point
-        "destinations": list(range(1, len(locations)))  # Indices of destination points
+        "destinations": list(range(1, len(locations))),  # Indices of destination points
+        "options": {
+            "traffic": "true"  # Enable real-time traffic consideration
+        }
     }
     
     try:
@@ -266,4 +272,3 @@ def get_travel_times(origin_lat, origin_lng, destinations=None):
             "status": "error",
             "message": f"Exception: {str(e)}"
         }
-        
