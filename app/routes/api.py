@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from app import db
 from app.models.poi import PointOfInterest
 from app.services.travel_time_service import get_travel_times
+import json
 
 api_bp = Blueprint('api', __name__)
 

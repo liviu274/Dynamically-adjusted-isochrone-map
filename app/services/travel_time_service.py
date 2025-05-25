@@ -39,10 +39,8 @@ def get_isochrones(origin_lat, origin_lng, travel_times=[5, 10, 15], travel_mode
         "range": ranges,
         "attributes": ["total_pop"],
         "location_type": "start",
-        "range_type": "time",
-        "options": {
-            "traffic": "true"  # Enable real-time traffic consideration
-        }
+        "range_type": "time"
+        # Removed "options": {"traffic": "true"} as it's not supported
     }
     
     try:
@@ -229,10 +227,7 @@ def get_travel_times(origin_lat, origin_lng, destinations=None):
         "locations": locations,
         "metrics": ["duration"],
         "sources": [0],  # Index of the origin point
-        "destinations": list(range(1, len(locations))),  # Indices of destination points
-        "options": {
-            "traffic": "true"  # Enable real-time traffic consideration
-        }
+        "destinations": list(range(1, len(locations)))  # Indices of destination points
     }
     
     try:
