@@ -98,10 +98,28 @@
 
         .poi-item {
             background: rgba(18, 21, 31, 0.8);
-            border: 1px solid rgba(0, 255, 163, 0.1);
+            border: 1px solid rgba(0, 255, 163, 0.2);
             border-radius: 12px;
             padding: 15px;
             margin-bottom: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .poi-item:hover {
+            border-color: rgba(0, 255, 163, 0.4);
+            box-shadow: 0 0 15px rgba(0, 255, 163, 0.1);
+        }
+
+        .poi-item strong {
+            color: var(--neon-primary) !important;
+        }
+
+        .poi-item .text-muted {
+            color: rgba(255, 255, 255, 0.7) !important;
+        }
+
+        .poi-item .text-muted:first-of-type {
+            color: rgba(0, 255, 163, 0.8) !important; /* Category color */
         }
 
         .poi-item button {
@@ -302,8 +320,10 @@
 
         <div class="col-lg-4">
             <div class="sidebar">
-                <h4 class="mb-4"><i class="bi bi-bookmark-star-fill me-2" style="color: var(--neon-primary)"></i>Saved Locations</h4>
-                <div id="poi-list"></div>
+                <h4 class="mb-4">
+                    <i class="bi bi-bookmark-star-fill me-2" style="color: var(--neon-primary)"></i>Saved Locations
+                </h4>
+                <div id="poi-list"></div> <!-- Add this div -->
             </div>
         </div>
     </div>

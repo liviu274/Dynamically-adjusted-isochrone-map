@@ -21,9 +21,9 @@ const map = L.map('map').setView([45.76, 21.23], 13);
     L.Icon.Default._getIconUrl = L.Icon.Default.prototype._getIconUrl;
 
     let isochroneCircle = null;
-    let selectedMarker = null;
-    const markers = [];
     let editingItem = null;
+    let selectedMarker = null;
+    let markers = []; // Array to track all POI markers
     let isochronesShowing = false;
 
     const showToast = (msg) => {
@@ -231,17 +231,6 @@ map.on('click', (e) => {
     selectedMarker = L.marker([lat, lng]).addTo(map).bindPopup("Selected location").openPopup();
 });
 
-    map.on('click', (e) => {
-        const { lat, lng } = e.latlng;
-        document.getElementById('poi-latitude').value = lat;
-        document.getElementById('poi-longitude').value = lng;
-
-        if (isochroneCircle) map.removeLayer(isochroneCircle);
-        if (selectedMarker) map.removeLayer(selectedMarker);
-
-        selectedMarker = L.marker([lat, lng]).addTo(map).bindPopup("Selected location").openPopup();
-    });
-
     // Add context menu for right-click on map
     let lastRequestTime = 0;
     const THROTTLE_TIME = 2000; // 2 seconds
@@ -262,240 +251,205 @@ map.on('click', (e) => {
         document.getElementById('time-val').textContent = this.value;
     });
 
-    document.getElementById('poi-form').addEventListener('submit', function (e) {
-        e.preventDefault();
+// Remove the poi-form listener that's outside DOMContentLoaded and fix the structure:
 
-        const name = document.getElementById('poi-name').value;
-        const category = document.getElementById('poi-category').value;
-        const desc = document.getElementById('poi-description').value;
-        const lat = parseFloat(document.getElementById('poi-latitude').value);
-        const lng = parseFloat(document.getElementById('poi-longitude').value);
-
-         // Validate coordinates before proceeding
-        if (isNaN(lat) || isNaN(lng)) {
-            showToast("Please select a valid location on the map first");
-            return; // Stop form submission
+document.addEventListener('DOMContentLoaded', function() {
+    // Define functions first
+    function calculateTravelTime(lat, lng) {
+        const clickedButton = event.target.closest('.btn-travel-time');
+        let timeValue = 10;
+        
+        if (clickedButton && clickedButton.dataset.timeValue) {
+            timeValue = parseInt(clickedButton.dataset.timeValue);
+        } else {
+            const timeSlider = document.getElementById('time-range');
+            timeValue = timeSlider ? parseInt(timeSlider.value) : 10;
         }
+        
+        console.log(`Calculating travel time with ${timeValue} minutes`);
+        fetchAndDisplayIsochrones(lat, lng, timeValue);
+    }
 
-        const minutes = parseInt(document.getElementById('time-range').value);
-
-        // Create popup content with travel time button
-        const popupContent = `
-            <div>
-                <strong>${name}</strong><br>
-                <small>${category}</small><br>
-                ${desc}
-                <div class="mt-2">
-                    <button class="btn-travel-time travel-time-btn" data-lat="${lat}" data-lng="${lng}">
-                        <i class="bi bi-clock-fill me-1"></i>Show Travel Times
-                    </button>
-                </div>
-            </div>
-        `;
-
-        const marker = L.marker([lat, lng]).addTo(map)
-            .bindPopup(popupContent);
-            
-        // Add event listener to the popup content after it's opened
-        marker.on('popupopen', function() {
-            setTimeout(() => {
-                const travelTimeBtn = document.querySelector('.travel-time-btn');
-                if (travelTimeBtn) {
-                    travelTimeBtn.addEventListener('click', function() {
-                        const btnLat = parseFloat(this.getAttribute('data-lat'));
-                        const btnLng = parseFloat(this.getAttribute('data-lng'));
-                        
-                        // Get a fresh value from the slider each time
-                        const timeSlider = document.getElementById('time-range');
-                        const minutes = parseInt(document.getElementById('time-val').textContent, 10);
-                        
-                        console.log('Travel time button clicked:');
-                        console.log('Button lat/lng:', btnLat, btnLng);
-                        console.log('Current slider value:', minutes);
-                        
-                        // Force refresh of the UI before proceeding
-                        document.getElementById('time-val').textContent = minutes;
-                        
-                        fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
-                    });
-                } else {
-                    console.error('Travel time button not found in popup');
-                }
-            }, 100);
-        });
-            
-        markers.push(marker);
-
-        if (isochroneCircle) map.removeLayer(isochroneCircle);
-
-        if (editingItem) {
-            editingItem.marker.remove();
-            editingItem.element.remove();
-        }
-
-        const item = document.createElement('div');
-item.className = 'poi-item';
-item.innerHTML = `
-    <div class="d-flex justify-content-between align-items-start">
-        <div class="d-flex align-items-center">
-            <input type="checkbox" class="poi-checkbox me-2" data-lat="${lat}" data-lng="${lng}">
-            <div>
-                <strong>${name}</strong><br>
-                <small><i class="bi bi-tag-fill me-1"></i>${category}</small>
-            </div>
-        </div>
-        <div>
-            <button class="btn btn-sm btn-outline-light btn-edit"><i class="bi bi-pencil-fill"></i></button>
-            <button class="btn btn-sm btn-outline-danger btn-delete"><i class="bi bi-trash-fill"></i></button>
-        </div>
-    </div>
-`;
-
-        const checkbox = item.querySelector('.poi-checkbox');
-        checkbox.addEventListener('change', handleViewSelectedButton);
-
-        item.querySelector('.btn-delete').addEventListener('click', () => {
-            marker.remove();
-            item.remove();
-            if (isochroneCircle) map.removeLayer(isochroneCircle);
-            if (selectedMarker) map.removeLayer(selectedMarker);
-            showToast("Location deleted");
-        });
-
-        item.querySelector('.btn-edit').addEventListener('click', () => {
-            document.getElementById('poi-name').value = name;
-            document.getElementById('poi-category').value = category;      
-            document.getElementById('poi-description').value = desc;
-            document.getElementById('poi-latitude').value = lat;
-            document.getElementById('poi-longitude').value = lng;
-            // Remove or fix the following line which is incorrect
-            // document.getElementById('poi-longitude').value = timeMinutes;
-
-            if (isochroneCircle) map.removeLayer(isochroneCircle);
-            if (selectedMarker) map.removeLayer(selectedMarker);
-
-            selectedMarker = L.marker([lat, lng]).addTo(map)
-                .bindPopup("Editing location").openPopup();
-
-            editingItem = { marker, element: item };
-        });
-
-        item.addEventListener('click', (e) => {
-            if (!e.target.closest('button')) {
-                map.setView([lat, lng], 16);
-                marker.openPopup();
-                
-                // Add event listener for the travel time button after the popup is opened
-                setTimeout(() => {
-                    const travelTimeBtn = document.querySelector('.travel-time-btn');
-                    if (travelTimeBtn) {
-                        travelTimeBtn.addEventListener('click', function() {
-                            const btnLat = parseFloat(this.getAttribute('data-lat'));
-                            const btnLng = parseFloat(this.getAttribute('data-lng'));
-                            const minutes = parseInt(document.getElementById('time-range').value);
-                            fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
-                        });
-                    }
-                }, 100);
-            }
-        });
-
-        document.getElementById('poi-list').appendChild(item);
-        this.reset();
-        editingItem = null;
-
+    function clearSelectedMarker() {
         if (selectedMarker) {
             map.removeLayer(selectedMarker);
             selectedMarker = null;
-        }
-
-        showToast("Location saved successfully!");
-    });
-
-    // Add the time range listener 
-    document.getElementById('time-range').addEventListener('input', function() {
-        document.getElementById('time-val').textContent = this.value;
-    });
-
-    // Add context menu for right-click on map
-    map.on('contextmenu', function(e) {
-        clearIsochrones();
-        // I don't want a second time radious on right-click
-
-        console.log('Right-click context menu:');
-        console.log('Coordinates:', e.latlng.lat, e.latlng.lng);
-        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
-    });
-
-
-    function clearSelectedMarker() {
-        if (selectedMarker && !editingItem) {
-            console.log('Clearing temporary marker');
-            
-            // Remove the marker
-            map.removeLayer(selectedMarker);
-            selectedMarker = null;
-            
-            // Also remove the circle
-            if (isochroneCircle) {
-                console.log('Clearing temporary circle');
-                map.removeLayer(isochroneCircle);
-                isochroneCircle = null;
-            }
-            
-            // Also clear any window.isochroneCircle (from the second click handler)
-            if (window.isochroneCircle) {
-                console.log('Clearing window circle');
-                map.removeLayer(window.isochroneCircle);
-                window.isochroneCircle = null;
-            }
-            
-            // Also clear isochrones created by right-click
-            clearIsochrones();
-            
-            // Clear coordinates from form
-            document.getElementById('poi-latitude').value = '';
-            document.getElementById('poi-longitude').value = '';
+            console.log('Selected marker cleared');
         }
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        // Escape key handler
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
-                console.log('Escape key pressed');
-                clearSelectedMarker();
-                clearJustIsochrones(); // Always try to clear isochrones
-            }
-        });
-    
-        // Click outside handler - use mousedown for better detection
-        document.addEventListener('mousedown', function(event) {
-            // First check if we need to clear isochrones (regardless of marker)
-            const mapElement = document.getElementById('map');
-            const formContainer = document.querySelector('.controls');
-            const sidebar = document.querySelector('.sidebar');
-            
-            if (!mapElement.contains(event.target) && 
-                !formContainer.contains(event.target) && 
-                !sidebar.contains(event.target)) {
-                
-                clearJustIsochrones(); // Always try to clear isochrones
-            }
-            
-            // Then handle marker clearing as before
-            if (!selectedMarker || editingItem) return;
-            
-            if (!mapElement.contains(event.target) && 
-                !formContainer.contains(event.target) && 
-                !sidebar.contains(event.target)) {
-                
-                console.log('Click outside detected');
-                clearSelectedMarker();
-            }
-        });
+    function handleViewSelectedButton() {
+        const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
+        let viewSelectedButton = document.querySelector('#view-selected-button');
 
-      // Add this function after your existing bounds declaration
+        if (checkedBoxes.length > 0) {
+            if (!viewSelectedButton) {
+                viewSelectedButton = document.createElement('button');
+                viewSelectedButton.id = 'view-selected-button';
+                viewSelectedButton.className = 'btn btn-success mb-3 ms-2';
+                viewSelectedButton.innerHTML = '<i class="bi bi-eye-fill"></i> View Selected POIs';
+                viewSelectedButton.onclick = viewSelectedPOIs;
+                document.querySelector('.controls').prepend(viewSelectedButton);
+            }
+        } else {
+            if (viewSelectedButton) {
+                viewSelectedButton.remove();
+            }
+        }
+    }
+
+    // Now add the POI form listener
+    const poiForm = document.getElementById('poi-form');
+    if (poiForm) {
+        poiForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            
+            const name = document.getElementById('poi-name').value;
+            const category = document.getElementById('poi-category').value;
+            const description = document.getElementById('poi-description').value;
+            const latitude = document.getElementById('poi-latitude').value;
+            const longitude = document.getElementById('poi-longitude').value;
+            const currentTimeValue = document.getElementById('time-range').value;
+            
+            if (!latitude || !longitude) {
+                showToast("Please click on the map to select a location first");
+                return;
+            }
+            
+            const marker = L.marker([latitude, longitude])
+                .addTo(map)
+                .bindPopup(`<strong>${name}</strong><br>${category}<br>${description || 'No description'}`);
+            
+            markers.push(marker);
+            
+            const item = document.createElement('div');
+            item.className = 'poi-item';
+            item.innerHTML = `
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input poi-checkbox" type="checkbox" 
+                               data-lat="${latitude}" data-lng="${longitude}">
+                        <strong class="ms-2" style="color: var(--neon-primary);">${name}</strong>
+                    </div>
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary btn-edit">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger btn-delete">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="text-muted small mb-1" style="color: rgba(0, 255, 163, 0.8);">${category}</div>
+                <div class="text-muted small mb-2" style="color: rgba(255, 255, 255, 0.7);">${description || 'No description'}</div>
+                <div class="text-muted small" style="color: rgba(0, 255, 163, 0.6);">
+                    <i class="bi bi-geo-alt"></i> ${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)}
+                </div>
+                <button class="btn btn-travel-time btn-sm" data-time-value="${currentTimeValue}">
+                    <i class="bi bi-clock"></i> Travel Time (${currentTimeValue} min)
+                </button>
+            `;
+            
+            // Add event listeners
+            const checkbox = item.querySelector('.poi-checkbox');
+            if (checkbox) {
+                checkbox.addEventListener('change', handleViewSelectedButton);
+            }
+            
+            const travelTimeBtn = item.querySelector('.btn-travel-time');
+            if (travelTimeBtn) {
+                travelTimeBtn.addEventListener('click', () => {
+                    calculateTravelTime(latitude, longitude);
+                });
+            }
+            
+            const deleteBtn = item.querySelector('.btn-delete');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', () => {
+                    item.remove();
+                    const markerToRemove = markers.find(m => 
+                        Math.abs(m.getLatLng().lat - parseFloat(latitude)) < 0.0001 &&
+                        Math.abs(m.getLatLng().lng - parseFloat(longitude)) < 0.0001
+                    );
+                    if (markerToRemove) {
+                        map.removeLayer(markerToRemove);
+                        markers = markers.filter(m => m !== markerToRemove);
+                    }
+                    handleViewSelectedButton();
+                });
+            }
+            
+            const editBtn = item.querySelector('.btn-edit');
+            if (editBtn) {
+                editBtn.addEventListener('click', () => {
+                    document.getElementById('poi-name').value = name;
+                    document.getElementById('poi-category').value = category;
+                    document.getElementById('poi-description').value = description;
+                    document.getElementById('poi-latitude').value = latitude;
+                    document.getElementById('poi-longitude').value = longitude;
+                    editingItem = item;
+                });
+            }
+            
+            item.addEventListener('click', (e) => {
+                if (!e.target.closest('button') && !e.target.closest('.form-check')) {
+                    map.setView([latitude, longitude], 15);
+                }
+            });
+            
+            const poiList = document.getElementById('poi-list');
+            if (poiList) {
+                poiList.appendChild(item);
+            } else {
+                console.error('POI list element not found!');
+                return;
+            }
+            
+            this.reset();
+            editingItem = null;
+            
+            if (selectedMarker) {
+                map.removeLayer(selectedMarker);
+                selectedMarker = null;
+            }
+            
+            showToast("Location saved successfully!");
+        });
+    }
+
+    // Escape key handler
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            console.log('Escape key pressed');
+            clearSelectedMarker();
+            clearJustIsochrones();
+        }
+    });
+
+    // Click outside handler
+    document.addEventListener('mousedown', function(event) {
+        const mapElement = document.getElementById('map');
+        const formContainer = document.querySelector('.controls');
+        const sidebar = document.querySelector('.sidebar');
+        
+        if (!mapElement.contains(event.target) && 
+            !formContainer.contains(event.target) && 
+            !sidebar.contains(event.target)) {
+            clearJustIsochrones();
+        }
+        
+        if (!selectedMarker || editingItem) return;
+        
+        if (!mapElement.contains(event.target) && 
+            !formContainer.contains(event.target) && 
+            !sidebar.contains(event.target)) {
+            console.log('Click outside detected');
+            clearSelectedMarker();
+        }
+    });
+});
+
+      // Add this after your existing bounds declaration
       function updateBoundsFromPOIs() {
           if (markers.length === 0) return; // No POIs to update from
 
@@ -664,19 +618,6 @@ item.innerHTML = `
       // Find where you create the POI item and add this after the checkbox HTML:
       // Add this to where you create the poi item in the poi-form submit handler
       // Immediately after creating the item but before adding event listeners:
-      if (!item.querySelector('.poi-checkbox')) {
-          // Add checkbox to the item if it doesn't exist
-          const checkboxDiv = document.createElement('div');
-          checkboxDiv.className = 'form-check mb-2';
-          checkboxDiv.innerHTML = `
-              <input class="form-check-input poi-checkbox" type="checkbox" 
-                  data-lat="${lat}" data-lng="${lng}" id="poiCheck${markers.length}">
-              <label class="form-check-label" for="poiCheck${markers.length}">
-                  Select for group view
-              </label>
-          `;
-          item.insertBefore(checkboxDiv, item.firstChild);
-      }
       item.querySelector('.poi-checkbox').addEventListener('change', handleViewSelectedButton);
 
       // Add a function to safely add event listeners (from main branch)
@@ -778,16 +719,16 @@ item.innerHTML = `
         }
     }
 
-    // Update the error handler in fetchAndDisplayIsochrones to be more precise
-    function isRateLimitError(error, response) {
-        // Check HTTP status code
-        if (response && (response.status === 429 || response.status === 403)) {
-            return true;
+        // Update the error handler in fetchAndDisplayIsochrones to be more precise
+        function isRateLimitError(error, response) {
+            // Check HTTP status code
+            if (response && (response.status === 429 || response.status === 403)) {
+                return true;
+            }
+            
+            // Check error message text
+            const errorText = error.toString().toLowerCase();
+            const rateLimitKeywords = ['rate limit', 'too many requests', 'quota exceeded', 'throttled'];
+            return rateLimitKeywords.some(keyword => errorText.includes(keyword));
         }
-        
-        // Check error message text
-        const errorText = error.toString().toLowerCase();
-        const rateLimitKeywords = ['rate limit', 'too many requests', 'quota exceeded', 'throttled'];
-        return rateLimitKeywords.some(keyword => errorText.includes(keyword));
-    }
 
