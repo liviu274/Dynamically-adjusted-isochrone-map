@@ -704,6 +704,16 @@ function viewSelectedPOIs() {
         };
         document.querySelector('#map').appendChild(resetButton);
     }
+
+    // Add capture button
+    let captureButton = document.createElement('button');
+    captureButton.className = 'btn btn-info position-absolute m-2';
+    captureButton.style.zIndex = '1000';
+    captureButton.style.right = '120px'; // Position next to reset button
+    captureButton.style.top = '10px';
+    captureButton.innerHTML = '<i class="bi bi-camera"></i> Capture Map';
+    captureButton.onclick = captureSelectedArea;
+    document.querySelector('#map').appendChild(captureButton);
 }
 
 // Add this function to handle the view selected POIs button visibility
@@ -727,6 +737,44 @@ function handleViewSelectedButton() {
             viewSelectedButton.remove();
         }
     }
+}
+
+// Function to capture a screenshot of view selected POIs rectangle
+function captureMapScreenshot() {
+    if (!currentSelectedBounds) {
+        showToast("Please select POIs first");
+        return;
+    }
+    
+    // Get the bounds of the selection
+    const bounds = currentSelectedBounds.getBounds();
+    
+    // Use leaflet.easyPrint plugin (needs to be added to your project)
+    // Or use Leaflet built-in methods
+    const canvas = document.createElement('canvas');
+    const size = map.getSize();
+    canvas.width = size.x;
+    canvas.height = size.y;
+    
+    // Wait for map rendering to complete
+    setTimeout(() => {
+        map.once('render', () => {
+            // Get map canvas
+            const mapCanvas = map.getRenderer(map.getContainer());
+            
+            // Create image from canvas
+            canvas.getContext('2d').drawImage(mapCanvas.canvas, 0, 0);
+            
+            // Download image
+            const link = document.createElement('a');
+            link.download = 'selected-pois.png';
+            link.href = canvas.toDataURL();
+            link.click();
+            
+            showToast("Screenshot saved!");
+        });
+        map.invalidateSize(); // Force re-render
+    }, 500);
 }
 
 // Modify your POI item creation code to add checkbox event listener
