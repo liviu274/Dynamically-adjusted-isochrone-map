@@ -21,9 +21,9 @@ const map = L.map('map').setView([45.76, 21.23], 13);
     L.Icon.Default._getIconUrl = L.Icon.Default.prototype._getIconUrl;
 
     let isochroneCircle = null;
-    let editingItem = null;
     let selectedMarker = null;
-    let markers = []; // Array to track all POI markers
+    const markers = [];
+    let editingItem = null;
     let isochronesShowing = false;
 
     const showToast = (msg) => {
@@ -37,148 +37,111 @@ const map = L.map('map').setView([45.76, 21.23], 13);
 
     // Function to fetch and display isochrones
     const fetchAndDisplayIsochrones = (lat, lng, customTimeMinutes = null) => {
-        // Show loading indicator
-        showToast("Loading isochrones...");
-        
-        // Initialize time ranges based on context
-        let timeRanges = [5]; // Default for right-click: just one 5-min isochrone (changed from 10)
-        let isCustomRequest = false;
-        
+        // Force convert customTimeMinutes to a number
         if (customTimeMinutes) {
-            // This is a request from "Show Travel Times" button
-            const requestedTime = parseInt(customTimeMinutes);
-            // Show two isochrones - half the time and full time
-            timeRanges = [Math.ceil(requestedTime/2), requestedTime];
-            isCustomRequest = true;
+            customTimeMinutes = parseInt(customTimeMinutes);
+            console.log("Custom time added:", customTimeMinutes);
         }
         
-        const params = new URLSearchParams({
-            origin_lat: lat,
-            origin_lng: lng,
-            times: timeRanges.join(','),
-            mode: 'driving-car'
-        });
+        console.log('fetchAndDisplayIsochrones called with:');
+        console.log('lat:', lat, 'lng:', lng);
+        console.log('customTimeMinutes (parsed):', customTimeMinutes);
         
-        fetch(`/api/isochrones?${params}`)
-            .then(response => {
-                if (!response.ok) {
-                    console.error(`API error: ${response.status} - ${response.statusText}`);
-                    
-                    // Directly check for any rate limiting or quota errors - more comprehensive
-                    if (response.status === 429 || response.status === 403) {
-                        showRateLimitError();
-                        throw new Error(`Rate limit exceeded (${response.status})`);
-                    }
-                    throw new Error(`HTTP error! status: ${response.status}`);
+        // Initialize time ranges array to include both default and custom
+        let timeRanges = [];
+        
+        // Always include a default 5 minute isochrone
+        timeRanges.push(300); // 5 minutes = 300 seconds
+        
+        // Add custom time if it's different from default and valid
+        if (customTimeMinutes && !isNaN(customTimeMinutes) && customTimeMinutes !== 5) {
+            // Convert minutes to seconds for the API
+            const timeSeconds = customTimeMinutes * 60;
+            timeRanges.push(timeSeconds);
+            console.log('Added custom time (seconds):', timeSeconds);
+        }
+        
+        console.log('Final time ranges array:', timeRanges);
+        
+        const requestBody = {
+            locations: [[lng, lat]],
+            range: timeRanges,
+            range_type: "time"
+        };
+        
+        console.log('API request body:', JSON.stringify(requestBody));
+
+        // Use our proxy endpoint instead of calling the API directly
+        fetch("/api/isochrones", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+        })
+        .then(response => {
+            if (!response.ok) {
+                if (response.status === 429) {
+                    throw new Error("Rate limit exceeded. Please try again later.");
                 }
-                return response.json();
-            })
-            .then(data => {
-                // Check if the response contains an error message about rate limiting
-                if (data.status === 'error' && data.message && 
-                    (data.message.toLowerCase().includes('rate') || 
-                     data.message.toLowerCase().includes('limit') || 
-                     data.message.toLowerCase().includes('quota'))) {
-                    showRateLimitError();
-                    throw new Error('API rate limit detected in response');
-                }
+                throw new Error(`API error: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Clear existing isochrones
+            clearIsochrones();
+            
+            // Process the response
+            if (data.type === 'FeatureCollection' && data.features && data.features.length > 0) {
+                console.log(`Processing ${data.features.length} isochrone features`);
                 
-                clearIsochrones();
-                
-                if (data.features) {
-                    // For custom requests (Show Travel Times button), process features in reverse order
-                    // so that smaller isochrone appears on top
-                    let processFeatures = [...data.features];
+                data.features.forEach((feature, index) => {
+                    // Extract minutes from feature properties (value is in seconds)
+                    const seconds = feature.properties.value;
+                    const minutes = Math.round(seconds / 60);
                     
-                    if (isCustomRequest && processFeatures.length > 1) {
-                        // Process in reverse order (outer first, inner last)
-                        processFeatures.reverse();
+                    console.log(`Feature ${index}: ${minutes} minutes`);
+                    
+                    // Determine color based on time range
+                    let color;
+                    if (minutes === 5) {
+                        color = '#9b5de5'; // Purple for default 5 min 
+                    } else {
+                        color = '#e63946'; // Red for custom time
                     }
                     
-                    // Process each isochrone feature
-                    processFeatures.forEach((feature, index) => {
-                        // Customize colors based on context
-                        let color;
-                        
-                        if (isCustomRequest) {
-                            // For "Show Travel Times": Purple for inner, Red for outer
-                            // Since we reversed the array, we need to flip the index check
-                            const originalIndex = isCustomRequest ? (processFeatures.length - 1 - index) : index;
-                            color = originalIndex === 0 ? "#8a2be2" : "#ff0000"; // Purple for first, Red for second
-                        } else {
-                            // For right-click: Just one purple isochrone
-                            color = "#8a2be2"; // Purple
+                    // Create isochrone layer with appropriate color
+                    const isoLayer = L.geoJSON(feature, {
+                        style: {
+                            color: color,
+                            fillColor: color,
+                            fillOpacity: 0.2,
+                            weight: 2,
+                            opacity: 0.7
                         }
-                        
-                        // Get time in minutes for tooltip
-                        const minutes = feature.properties.value / 60;
-                        
-                        const layer = L.geoJSON(feature, {
-                            style: {
-                                color: color,
-                                weight: 2,
-                                opacity: 0.8,
-                                fillColor: color,
-                                fillOpacity: 0.2
-                            }
-                        })
-                        .bindTooltip(`<div class="time-tooltip"><span class="neon-text">${minutes} mins</span></div>`, {
-                            permanent: false,
-                            direction: 'center',
-                            className: 'isochrone-tooltip',
-                            opacity: 0.95
-                        })
-                        .addTo(map);
-                        
-                        // Add mouseover/mouseout events for better UX
-                        layer.on('mouseover', function(e) {
-                            this.setStyle({
-                                fillOpacity: 0.4,
-                                weight: 3
-                            });
-                            this.openTooltip(e.latlng);
-                        });
-                        
-                        layer.on('mouseout', function() {
-                            this.setStyle({
-                                fillOpacity: 0.2,
-                                weight: 2
-                            });
-                            this.closeTooltip();
-                        });
-                        
-                        isochroneLayers.push(layer);
-                        
-                        // Remove the permanent time label markers - now using tooltips instead
+                    }).addTo(map);
+                    
+                    // Add tooltip showing the time
+                    isoLayer.bindTooltip(`${minutes} minute travel time`, {
+                        permanent: false,
+                        direction: 'center'
                     });
                     
-                    // Make sure the inner isochrone is displayed on top
-                    if (isCustomRequest && isochroneLayers.length > 1) {
-                        isochroneLayers[isochroneLayers.length - 1].bringToFront();
-                    }
-                    
-                    isochronesShowing = true;
-                    showToast(`Displaying travel time isochrones`);
-                } else {
-                    showToast("No isochrone data available");
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching isochrones:', error);
+                    isochroneLayers.push(isoLayer);
+                });
                 
-                // Expanded error message detection - make this more comprehensive
-                const errorMsg = error.message ? error.message.toLowerCase() : '';
-                if (errorMsg.includes('rate') || 
-                    errorMsg.includes('limit') || 
-                    errorMsg.includes('429') || 
-                    errorMsg.includes('quota') ||
-                    errorMsg.includes('exceeded')) {
-                    console.log('Rate limit error detected - showing error message');
-                    showRateLimitError(); // Always call this for any rate-related error
-                } else {
-                    showToast('Failed to load isochrones. Please try again.');
-                }
-            });
+                isochronesShowing = true;
+            } else {
+                console.error('No features found in API response');
+                console.log('API response data:', data);
+                showToast('No travel time data available for this location.');
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching isochrones:', error);
+            showToast(error.message || 'Failed to load travel times. Please try again.');
+        });
     };
     
     // Clear isochrones
@@ -231,504 +194,439 @@ map.on('click', (e) => {
     selectedMarker = L.marker([lat, lng]).addTo(map).bindPopup("Selected location").openPopup();
 });
 
-    // Add context menu for right-click on map
-    let lastRequestTime = 0;
-    const THROTTLE_TIME = 2000; // 2 seconds
+    map.on('click', (e) => {
+        const { lat, lng } = e.latlng;
+        document.getElementById('poi-latitude').value = lat;
+        document.getElementById('poi-longitude').value = lng;
 
-    map.on('contextmenu', function(e) {
-        const now = Date.now();
-        if (now - lastRequestTime < THROTTLE_TIME) {
-            showToast("Please wait before making another request");
-            return;
-        }
-        
-        lastRequestTime = now;
-        clearIsochrones();
-        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
+        if (isochroneCircle) map.removeLayer(isochroneCircle);
+        if (selectedMarker) map.removeLayer(selectedMarker);
+
+        selectedMarker = L.marker([lat, lng]).addTo(map).bindPopup("Selected location").openPopup();
     });
 
     document.getElementById('time-range').addEventListener('input', function () {
         document.getElementById('time-val').textContent = this.value;
     });
 
-// Remove the poi-form listener that's outside DOMContentLoaded and fix the structure:
+    document.getElementById('poi-form').addEventListener('submit', function (e) {
+        e.preventDefault();
 
-document.addEventListener('DOMContentLoaded', function() {
-    // Define functions first
-    function calculateTravelTime(lat, lng) {
-        const clickedButton = event.target.closest('.btn-travel-time');
-        let timeValue = 10;
-        
-        if (clickedButton && clickedButton.dataset.timeValue) {
-            timeValue = parseInt(clickedButton.dataset.timeValue);
-        } else {
-            const timeSlider = document.getElementById('time-range');
-            timeValue = timeSlider ? parseInt(timeSlider.value) : 10;
+        const name = document.getElementById('poi-name').value;
+        const category = document.getElementById('poi-category').value;
+        const desc = document.getElementById('poi-description').value;
+        const lat = parseFloat(document.getElementById('poi-latitude').value);
+        const lng = parseFloat(document.getElementById('poi-longitude').value);
+
+         // Validate coordinates before proceeding
+        if (isNaN(lat) || isNaN(lng)) {
+            showToast("Please select a valid location on the map first");
+            return; // Stop form submission
         }
-        
-        console.log(`Calculating travel time with ${timeValue} minutes`);
-        fetchAndDisplayIsochrones(lat, lng, timeValue);
-    }
 
-    function clearSelectedMarker() {
+        const minutes = parseInt(document.getElementById('time-range').value);
+
+        // Create popup content with travel time button
+        const popupContent = `
+            <div>
+                <strong>${name}</strong><br>
+                <small>${category}</small><br>
+                ${desc}
+                <div class="mt-2">
+                    <button class="btn-travel-time travel-time-btn" data-lat="${lat}" data-lng="${lng}">
+                        <i class="bi bi-clock-fill me-1"></i>Show Travel Times
+                    </button>
+                </div>
+            </div>
+        `;
+
+        const marker = L.marker([lat, lng]).addTo(map)
+            .bindPopup(popupContent);
+            
+        // Add event listener to the popup content after it's opened
+        marker.on('popupopen', function() {
+            setTimeout(() => {
+                const travelTimeBtn = document.querySelector('.travel-time-btn');
+                if (travelTimeBtn) {
+                    travelTimeBtn.addEventListener('click', function() {
+                        const btnLat = parseFloat(this.getAttribute('data-lat'));
+                        const btnLng = parseFloat(this.getAttribute('data-lng'));
+                        
+                        // Get a fresh value from the slider each time
+                        const timeSlider = document.getElementById('time-range');
+                        const minutes = parseInt(document.getElementById('time-val').textContent, 10);
+                        
+                        console.log('Travel time button clicked:');
+                        console.log('Button lat/lng:', btnLat, btnLng);
+                        console.log('Current slider value:', minutes);
+                        
+                        // Force refresh of the UI before proceeding
+                        document.getElementById('time-val').textContent = minutes;
+                        
+                        fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
+                    });
+                } else {
+                    console.error('Travel time button not found in popup');
+                }
+            }, 100);
+        });
+            
+        markers.push(marker);
+
+        if (isochroneCircle) map.removeLayer(isochroneCircle);
+
+        if (editingItem) {
+            editingItem.marker.remove();
+            editingItem.element.remove();
+        }
+
+        const item = document.createElement('div');
+item.className = 'poi-item';
+item.innerHTML = `
+    <div class="d-flex justify-content-between align-items-start">
+        <div class="d-flex align-items-center">
+            <input type="checkbox" class="poi-checkbox me-2" data-lat="${lat}" data-lng="${lng}">
+            <div>
+                <strong>${name}</strong><br>
+                <small><i class="bi bi-tag-fill me-1"></i>${category}</small>
+            </div>
+        </div>
+        <div>
+            <button class="btn btn-sm btn-outline-light btn-edit"><i class="bi bi-pencil-fill"></i></button>
+            <button class="btn btn-sm btn-outline-danger btn-delete"><i class="bi bi-trash-fill"></i></button>
+        </div>
+    </div>
+`;
+
+        const checkbox = item.querySelector('.poi-checkbox');
+        checkbox.addEventListener('change', handleViewSelectedButton);
+
+        item.querySelector('.btn-delete').addEventListener('click', () => {
+            marker.remove();
+            item.remove();
+            if (isochroneCircle) map.removeLayer(isochroneCircle);
+            if (selectedMarker) map.removeLayer(selectedMarker);
+            showToast("Location deleted");
+        });
+
+        item.querySelector('.btn-edit').addEventListener('click', () => {
+            document.getElementById('poi-name').value = name;
+            document.getElementById('poi-category').value = category;      
+            document.getElementById('poi-description').value = desc;
+            document.getElementById('poi-latitude').value = lat;
+            document.getElementById('poi-longitude').value = lng;
+            // Remove or fix the following line which is incorrect
+            // document.getElementById('poi-longitude').value = timeMinutes;
+
+            if (isochroneCircle) map.removeLayer(isochroneCircle);
+            if (selectedMarker) map.removeLayer(selectedMarker);
+
+            selectedMarker = L.marker([lat, lng]).addTo(map)
+                .bindPopup("Editing location").openPopup();
+
+            editingItem = { marker, element: item };
+        });
+
+        item.addEventListener('click', (e) => {
+            if (!e.target.closest('button')) {
+                map.setView([lat, lng], 16);
+                marker.openPopup();
+                
+                // Add event listener for the travel time button after the popup is opened
+                setTimeout(() => {
+                    const travelTimeBtn = document.querySelector('.travel-time-btn');
+                    if (travelTimeBtn) {
+                        travelTimeBtn.addEventListener('click', function() {
+                            const btnLat = parseFloat(this.getAttribute('data-lat'));
+                            const btnLng = parseFloat(this.getAttribute('data-lng'));
+                            const minutes = parseInt(document.getElementById('time-range').value);
+                            fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
+                        });
+                    }
+                }, 100);
+            }
+        });
+
+        document.getElementById('poi-list').appendChild(item);
+        this.reset();
+        editingItem = null;
+
         if (selectedMarker) {
             map.removeLayer(selectedMarker);
             selectedMarker = null;
-            console.log('Selected marker cleared');
+        }
+
+        showToast("Location saved successfully!");
+    });
+
+    // Add the time range listener 
+    document.getElementById('time-range').addEventListener('input', function() {
+        document.getElementById('time-val').textContent = this.value;
+    });
+
+    // Add context menu for right-click on map
+    map.on('contextmenu', function(e) {
+        clearIsochrones();
+        // I don't want a second time radious on right-click
+
+        console.log('Right-click context menu:');
+        console.log('Coordinates:', e.latlng.lat, e.latlng.lng);
+        fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
+    });
+
+
+    function clearSelectedMarker() {
+        if (selectedMarker && !editingItem) {
+            console.log('Clearing temporary marker');
+            
+            // Remove the marker
+            map.removeLayer(selectedMarker);
+            selectedMarker = null;
+            
+            // Also remove the circle
+            if (isochroneCircle) {
+                console.log('Clearing temporary circle');
+                map.removeLayer(isochroneCircle);
+                isochroneCircle = null;
+            }
+            
+            // Also clear any window.isochroneCircle (from the second click handler)
+            if (window.isochroneCircle) {
+                console.log('Clearing window circle');
+                map.removeLayer(window.isochroneCircle);
+                window.isochroneCircle = null;
+            }
+            
+            // Also clear isochrones created by right-click
+            clearIsochrones();
+            
+            // Clear coordinates from form
+            document.getElementById('poi-latitude').value = '';
+            document.getElementById('poi-longitude').value = '';
         }
     }
 
-    function handleViewSelectedButton() {
-        const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
-        let viewSelectedButton = document.querySelector('#view-selected-button');
-
-        if (checkedBoxes.length > 0) {
-            if (!viewSelectedButton) {
-                viewSelectedButton = document.createElement('button');
-                viewSelectedButton.id = 'view-selected-button';
-                viewSelectedButton.className = 'btn btn-success mb-3 ms-2';
-                viewSelectedButton.innerHTML = '<i class="bi bi-eye-fill"></i> View Selected POIs';
-                viewSelectedButton.onclick = viewSelectedPOIs;
-                document.querySelector('.controls').prepend(viewSelectedButton);
+    document.addEventListener('DOMContentLoaded', function() {
+        // Escape key handler
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                console.log('Escape key pressed');
+                clearSelectedMarker();
+                clearJustIsochrones(); // Always try to clear isochrones
             }
-        } else {
-            if (viewSelectedButton) {
-                viewSelectedButton.remove();
-            }
-        }
-    }
-
-    // Now add the POI form listener
-    const poiForm = document.getElementById('poi-form');
-    if (poiForm) {
-        poiForm.addEventListener('submit', function (e) {
-            e.preventDefault();
-            
-            const name = document.getElementById('poi-name').value;
-            const category = document.getElementById('poi-category').value;
-            const description = document.getElementById('poi-description').value;
-            const latitude = document.getElementById('poi-latitude').value;
-            const longitude = document.getElementById('poi-longitude').value;
-            const currentTimeValue = document.getElementById('time-range').value;
-            
-            if (!latitude || !longitude) {
-                showToast("Please click on the map to select a location first");
-                return;
-            }
-            
-            const marker = L.marker([latitude, longitude])
-                .addTo(map)
-                .bindPopup(`<strong>${name}</strong><br>${category}<br>${description || 'No description'}`);
-            
-            markers.push(marker);
-            
-            const item = document.createElement('div');
-            item.className = 'poi-item';
-            item.innerHTML = `
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                    <div class="form-check">
-                        <input class="form-check-input poi-checkbox" type="checkbox" 
-                               data-lat="${latitude}" data-lng="${longitude}">
-                        <strong class="ms-2" style="color: var(--neon-primary);">${name}</strong>
-                    </div>
-                    <div>
-                        <button class="btn btn-sm btn-outline-primary btn-edit">
-                            <i class="bi bi-pencil"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger btn-delete">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="text-muted small mb-1" style="color: rgba(0, 255, 163, 0.8);">${category}</div>
-                <div class="text-muted small mb-2" style="color: rgba(255, 255, 255, 0.7);">${description || 'No description'}</div>
-                <div class="text-muted small" style="color: rgba(0, 255, 163, 0.6);">
-                    <i class="bi bi-geo-alt"></i> ${parseFloat(latitude).toFixed(4)}, ${parseFloat(longitude).toFixed(4)}
-                </div>
-                <button class="btn btn-travel-time btn-sm" data-time-value="${currentTimeValue}">
-                    <i class="bi bi-clock"></i> Travel Time (${currentTimeValue} min)
-                </button>
-            `;
-            
-            // Add event listeners
-            const checkbox = item.querySelector('.poi-checkbox');
-            if (checkbox) {
-                checkbox.addEventListener('change', handleViewSelectedButton);
-            }
-            
-            const travelTimeBtn = item.querySelector('.btn-travel-time');
-            if (travelTimeBtn) {
-                travelTimeBtn.addEventListener('click', () => {
-                    calculateTravelTime(latitude, longitude);
-                });
-            }
-            
-            const deleteBtn = item.querySelector('.btn-delete');
-            if (deleteBtn) {
-                deleteBtn.addEventListener('click', () => {
-                    item.remove();
-                    const markerToRemove = markers.find(m => 
-                        Math.abs(m.getLatLng().lat - parseFloat(latitude)) < 0.0001 &&
-                        Math.abs(m.getLatLng().lng - parseFloat(longitude)) < 0.0001
-                    );
-                    if (markerToRemove) {
-                        map.removeLayer(markerToRemove);
-                        markers = markers.filter(m => m !== markerToRemove);
-                    }
-                    handleViewSelectedButton();
-                });
-            }
-            
-            const editBtn = item.querySelector('.btn-edit');
-            if (editBtn) {
-                editBtn.addEventListener('click', () => {
-                    document.getElementById('poi-name').value = name;
-                    document.getElementById('poi-category').value = category;
-                    document.getElementById('poi-description').value = description;
-                    document.getElementById('poi-latitude').value = latitude;
-                    document.getElementById('poi-longitude').value = longitude;
-                    editingItem = item;
-                });
-            }
-            
-            item.addEventListener('click', (e) => {
-                if (!e.target.closest('button') && !e.target.closest('.form-check')) {
-                    map.setView([latitude, longitude], 15);
-                }
-            });
-            
-            const poiList = document.getElementById('poi-list');
-            if (poiList) {
-                poiList.appendChild(item);
-            } else {
-                console.error('POI list element not found!');
-                return;
-            }
-            
-            this.reset();
-            editingItem = null;
-            
-            if (selectedMarker) {
-                map.removeLayer(selectedMarker);
-                selectedMarker = null;
-            }
-            
-            showToast("Location saved successfully!");
         });
-    }
+    
+        // Click outside handler - use mousedown for better detection
+        document.addEventListener('mousedown', function(event) {
+            // First check if we need to clear isochrones (regardless of marker)
+            const mapElement = document.getElementById('map');
+            const formContainer = document.querySelector('.controls');
+            const sidebar = document.querySelector('.sidebar');
+            
+            if (!mapElement.contains(event.target) && 
+                !formContainer.contains(event.target) && 
+                !sidebar.contains(event.target)) {
+                
+                clearJustIsochrones(); // Always try to clear isochrones
+            }
+            
+            // Then handle marker clearing as before
+            if (!selectedMarker || editingItem) return;
+            
+            if (!mapElement.contains(event.target) && 
+                !formContainer.contains(event.target) && 
+                !sidebar.contains(event.target)) {
+                
+                console.log('Click outside detected');
+                clearSelectedMarker();
+            }
+        });
+        
+        // Add a function to safely add event listeners
+        function addSafeEventListener(element, event, handler) {
+            // First remove any existing listeners of the same type (optional)
+            element.removeEventListener(event, handler);
+            // Then add the new listener
+            element.addEventListener(event, handler);
+            console.log(`Event listener '${event}' added to:`, element);
+        }
 
-    // Escape key handler
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-            console.log('Escape key pressed');
-            clearSelectedMarker();
-            clearJustIsochrones();
+        const timeRangeSlider = document.getElementById('time-range');
+        if (timeRangeSlider) {
+            const sliderHandler = function() {
+                const currentValue = parseInt(this.value);
+                console.log('Slider changed to:', currentValue);
+                document.getElementById('time-val').textContent = currentValue;
+            };
+            
+            addSafeEventListener(timeRangeSlider, 'input', sliderHandler);
         }
     });
 
-    // Click outside handler
-    document.addEventListener('mousedown', function(event) {
-        const mapElement = document.getElementById('map');
-        const formContainer = document.querySelector('.controls');
-        const sidebar = document.querySelector('.sidebar');
-        
-        if (!mapElement.contains(event.target) && 
-            !formContainer.contains(event.target) && 
-            !sidebar.contains(event.target)) {
-            clearJustIsochrones();
-        }
-        
-        if (!selectedMarker || editingItem) return;
-        
-        if (!mapElement.contains(event.target) && 
-            !formContainer.contains(event.target) && 
-            !sidebar.contains(event.target)) {
-            console.log('Click outside detected');
-            clearSelectedMarker();
-        }
-    });
-});
+    // Add after creating isochrone layer:
+    const trafficBadge = document.createElement('div');
+    trafficBadge.className = 'traffic-indicator';
+    trafficBadge.innerHTML = '<i class="bi bi-car-front"></i> Real-time traffic';
+    document.querySelector('.map-container').appendChild(trafficBadge);
 
-      // Add this after your existing bounds declaration
-      function updateBoundsFromPOIs() {
-          if (markers.length === 0) return; // No POIs to update from
 
-          // Get all POI coordinates
-          const lats = markers.map(marker => marker.getLatLng().lat);
-          const lngs = markers.map(marker => marker.getLatLng().lng);
 
-          // Calculate new bounds with padding
-          const padding = 0.02; // Approximately 2km padding
-          const newBounds = [
-              [Math.min(...lats) - padding, Math.min(...lngs) - padding],
-              [Math.max(...lats) + padding, Math.max(...lngs) + padding]
-          ];
+// Add this function after your existing bounds declaration
+function updateBoundsFromPOIs() {
+    if (markers.length === 0) return; // No POIs to update from
+    
+    // Get all POI coordinates
+    const lats = markers.map(marker => marker.getLatLng().lat);
+    const lngs = markers.map(marker => marker.getLatLng().lng);
+    
+    // Calculate new bounds with padding
+    const padding = 0.02; // Approximately 2km padding
+    const newBounds = [
+        [Math.min(...lats) - padding, Math.min(...lngs) - padding],
+        [Math.max(...lats) + padding, Math.max(...lngs) + padding]
+    ];
+    
+    // Update the boundary rectangle
+    if (boundaryRectangle) {
+        boundaryRectangle.setBounds(newBounds);
+    }
+    
+    // Update the bounds constant
+    bounds[0] = newBounds[0];
+    bounds[1] = newBounds[1];
+    
+    // Fit map to new bounds
+    map.fitBounds(boundaryRectangle.getBounds());
+    
+    showToast("Map boundaries updated based on POIs");
+}
 
-          // Update the boundary rectangle
-          if (boundaryRectangle) {
-              boundaryRectangle.setBounds(newBounds);
-          }
+// Add this after your existing bounds declaration
+let currentSelectedBounds = null; // Add this at the top with other global variables
 
-          // Update the bounds constant
-          bounds[0] = newBounds[0];
-          bounds[1] = newBounds[1];
-
-          // Fit map to new bounds
-          map.fitBounds(boundaryRectangle.getBounds());
-
-          showToast("Map boundaries updated based on POIs");
-      }
-
-      // Add a button to trigger the update
-      const updateBoundsButton = document.createElement('button');
-      updateBoundsButton.className = 'btn btn-primary mb-3';
-      updateBoundsButton.innerHTML = '<i class="bi bi-arrows-angle-expand"></i> Update Map Bounds';
-      updateBoundsButton.onclick = updateBoundsFromPOIs;
-
-      // Add the button to your controls container
-      document.querySelector('.controls').prepend(updateBoundsButton);
-
-      // Add this after your existing bounds declaration
-      let currentSelectedBounds = null; // Add this at the top with other global variables
-
-      function viewSelectedPOIs() {
-          // Remove previous selection if it exists
-          if (currentSelectedBounds) {
-              map.removeLayer(currentSelectedBounds);
-              currentSelectedBounds = null;
-          }
-
-          const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
-
-          if (checkedBoxes.length === 0) {
-              showToast("Please select at least one location");
-              return;
-          }
-
-          // Hide all markers first
-          markers.forEach(marker => {
-              marker.setOpacity(0.2);
-          });
-
-          // Hide the original orange boundary
-          boundaryRectangle.setStyle({ opacity: 0, fillOpacity: 0 });
-
-          // Show only selected markers and collect their coordinates
-          const selectedCoords = [];
-          checkedBoxes.forEach(checkbox => {
-              const lat = parseFloat(checkbox.dataset.lat);
-              const lng = parseFloat(checkbox.dataset.lng);
-              selectedCoords.push({ lat, lng });
-
-              // Find and highlight the corresponding marker
-              const marker = markers.find(m => {
-                  const pos = m.getLatLng();
-                  return pos.lat === lat && pos.lng === lng;
-              });
-              if (marker) {
-                  marker.setOpacity(1);
-              }
-          });
-
-          // Calculate the center point
-          const lats = selectedCoords.map(coord => coord.lat);
-          const lngs = selectedCoords.map(coord => coord.lng);
-          const centerLat = (Math.max(...lats) + Math.min(...lats)) / 2;
-          const centerLng = (Math.max(...lngs) + Math.min(...lngs)) / 2;
-
-          // Calculate the spread of selected POIs
-          const latSpread = Math.max(...lats) - Math.min(...lats);
-          const lngSpread = Math.max(...lngs) - Math.min(...lngs);
-
-          // Reduce padding for tighter zoom (changed from 0.5 to 0.2)
-          const padding = 0.2;
-          const adjustedLatSpread = latSpread * (1 + padding);
-          const adjustedLngSpread = lngSpread * (1 + padding);
-
-          // Create new bounds based on the POI spread
-          const newBounds = [
-              [centerLat - adjustedLatSpread/2, centerLng - adjustedLngSpread/2],
-              [centerLat + adjustedLatSpread/2, centerLng + adjustedLngSpread/2]
-          ];
-
-          // Create and add the green boundary
-          currentSelectedBounds = L.rectangle(newBounds, {
-              color: "#4CAF50",
-              weight: 3,
-              fillOpacity: 0.15,
-              dashArray: '10, 15'
-          }).addTo(map);
-
-          // Fit map to the new bounds with tighter zoom
-          map.flyToBounds(newBounds, {
-              margin: [10, 10], // Reduced padding from 30 to 10
-              duration: 1.5,
-              animate: true,
-              maxZoom: 20 // Increased max zoom from 17 to 18
-          });
-
-          // Add reset button
-          let resetButton = document.querySelector('#reset-bounds-button');
-          if (!resetButton) {
-              resetButton = document.createElement('button');
-              resetButton.id = 'reset-bounds-button';
-              resetButton.className = 'btn btn-warning position-absolute m-2';
-              resetButton.style.zIndex = '1000';
-              resetButton.style.right = '10px';
-              resetButton.style.top = '10px';
-              resetButton.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Reset View';
-              resetButton.onclick = () => {
-                  markers.forEach(marker => marker.setOpacity(1));
-                  boundaryRectangle.setStyle({ opacity: 1, fillOpacity: 0.1 });
-                  if (currentSelectedBounds) {
-                      map.removeLayer(currentSelectedBounds);
-                      currentSelectedBounds = null;
-                  }
-                  resetButton.remove();
-                  map.fitBounds(bounds);
-              };
-              document.querySelector('#map').appendChild(resetButton);
-          }
-      }
-
-      // Add this function to handle the view selected POIs button visibility
-      function handleViewSelectedButton() {
-          const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
-          let viewSelectedButton = document.querySelector('#view-selected-button');
-
-          if (checkedBoxes.length > 0) {
-              // Create button if it doesn't exist
-              if (!viewSelectedButton) {
-                  viewSelectedButton = document.createElement('button');
-                  viewSelectedButton.id = 'view-selected-button';
-                  viewSelectedButton.className = 'btn btn-success mb-3 ms-2';
-                  viewSelectedButton.innerHTML = '<i class="bi bi-eye-fill"></i> View Selected POIs';
-                  viewSelectedButton.onclick = viewSelectedPOIs;
-                  document.querySelector('.controls').prepend(viewSelectedButton);
-              }
-          } else {
-              // Remove button if no checkboxes are selected
-              if (viewSelectedButton) {
-                  viewSelectedButton.remove();
-              }
-          }
-      }
-
-      // Modify your POI item creation code to add checkbox event listener
-      // Find where you create the POI item and add this after the checkbox HTML:
-      // Add this to where you create the poi item in the poi-form submit handler
-      // Immediately after creating the item but before adding event listeners:
-      item.querySelector('.poi-checkbox').addEventListener('change', handleViewSelectedButton);
-
-      // Add a function to safely add event listeners (from main branch)
-      function addSafeEventListener(element, event, handler) {
-          // First remove any existing listeners of the same type (optional)
-          element.removeEventListener(event, handler);
-          // Then add the new listener
-          element.addEventListener(event, handler);
-          console.log(`Event listener '${event}' added to:`, element);
-      }
-
-      const timeRangeSlider = document.getElementById('time-range');
-      if (timeRangeSlider) {
-          const sliderHandler = function() {
-              const currentValue = parseInt(this.value);
-              console.log('Slider changed to:', currentValue);
-              document.getElementById('time-val').textContent = currentValue;
-          };
-
-          addSafeEventListener(timeRangeSlider, 'input', sliderHandler);
-      }
-
-      // Add traffic indicator badge (from main branch)
-      const trafficBadge = document.createElement('div');
-      trafficBadge.className = 'traffic-indicator';
-      trafficBadge.innerHTML = '<i class="bi bi-car-front"></i> Real-time traffic';
-      document.querySelector('.map-container').appendChild(trafficBadge);
-    // Replace the existing showRateLimitError function
-    function showRateLimitError(errorMessage = '') {
-        // Log to console for debugging - this ensures console message is always present when error displays
-        console.error(`API Rate limit exceeded: ${errorMessage}`);
-        
-        const errorElement = document.getElementById('rate-limit-error');
-        if (!errorElement) {
-            console.error('Rate limit error element not found');
-            showToast('API rate limit exceeded. Please wait before making more requests.');
-            return;
-        }
-        
-        // Create countdown timer element
-        let secondsLeft = 60;
-        
-        // Update error message with countdown and actual error if available
-        const messageSpan = errorElement.querySelector('.alert-content span');
-        if (messageSpan) {
-            let message = `API rate limit exceeded. Please wait <span class="countdown-timer">${secondsLeft}</span> seconds before making more requests.`;
-            
-            // Add API-specific message if available
-            if (errorMessage && errorMessage.length > 0) {
-                message += `<br><small class="text-muted">${errorMessage}</small>`;
-            }
-            
-            messageSpan.innerHTML = message;
-        }
-        
-        // Apply fade-in animation
-        errorElement.style.opacity = '0';
-        errorElement.classList.remove('d-none');
-        void errorElement.offsetWidth;
-        errorElement.style.transition = 'opacity 0.5s ease-in-out';
-        errorElement.style.opacity = '1';
-        
-        // Clear existing interval if there is one
-        if (errorElement.dataset.intervalId) {
-            clearInterval(parseInt(errorElement.dataset.intervalId));
-        }
-        
-        // Start countdown
-        const countdownInterval = setInterval(() => {
-            secondsLeft--;
-            const countdownElement = errorElement.querySelector('.countdown-timer');
-            if (countdownElement) countdownElement.textContent = secondsLeft;
-            
-            if (secondsLeft <= 0) {
-                clearInterval(countdownInterval);
-                errorElement.style.opacity = '0';
-                setTimeout(() => {
-                    errorElement.classList.add('d-none');
-                    errorElement.style.opacity = '1';
-                }, 500);
-            }
-        }, 1000);
-        
-        errorElement.dataset.intervalId = countdownInterval;
-        
-        // Add event listener to dismiss button
-        const dismissBtn = errorElement.querySelector('#dismiss-rate-limit');
-        if (dismissBtn) {
-            dismissBtn.addEventListener('click', function() {
-                if (errorElement.dataset.intervalId) {
-                    clearInterval(parseInt(errorElement.dataset.intervalId));
-                }
-                errorElement.style.opacity = '0';
-                setTimeout(() => {
-                    errorElement.classList.add('d-none');
-                    errorElement.style.opacity = '1';
-                }, 500);
-            });
-        }
+function viewSelectedPOIs() {
+    // Remove previous selection if it exists
+    if (currentSelectedBounds) {
+        map.removeLayer(currentSelectedBounds);
+        currentSelectedBounds = null;
     }
 
-        // Update the error handler in fetchAndDisplayIsochrones to be more precise
-        function isRateLimitError(error, response) {
-            // Check HTTP status code
-            if (response && (response.status === 429 || response.status === 403)) {
-                return true;
-            }
-            
-            // Check error message text
-            const errorText = error.toString().toLowerCase();
-            const rateLimitKeywords = ['rate limit', 'too many requests', 'quota exceeded', 'throttled'];
-            return rateLimitKeywords.some(keyword => errorText.includes(keyword));
-        }
+    const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
+    
+    if (checkedBoxes.length === 0) {
+        showToast("Please select at least one location");
+        return;
+    }
 
+    // Hide all markers first
+    markers.forEach(marker => {
+        marker.setOpacity(0.2);
+    });
+
+    // Hide the original orange boundary
+    boundaryRectangle.setStyle({ opacity: 0, fillOpacity: 0 });
+
+    // Show only selected markers and collect their coordinates
+    const selectedCoords = [];
+    checkedBoxes.forEach(checkbox => {
+        const lat = parseFloat(checkbox.dataset.lat);
+        const lng = parseFloat(checkbox.dataset.lng);
+        selectedCoords.push({ lat, lng });
+        
+        // Find and highlight the corresponding marker
+        const marker = markers.find(m => {
+            const pos = m.getLatLng();
+            return pos.lat === lat && pos.lng === lng;
+        });
+        if (marker) {
+            marker.setOpacity(1);
+        }
+    });
+
+    // Calculate the center point
+    const lats = selectedCoords.map(coord => coord.lat);
+    const lngs = selectedCoords.map(coord => coord.lng);
+    const centerLat = (Math.max(...lats) + Math.min(...lats)) / 2;
+    const centerLng = (Math.max(...lngs) + Math.min(...lngs)) / 2;
+
+    // Calculate the spread of selected POIs
+    const latSpread = Math.max(...lats) - Math.min(...lats);
+    const lngSpread = Math.max(...lngs) - Math.min(...lngs);
+
+    // Reduce padding for tighter zoom (changed from 0.5 to 0.2)
+    const padding = 0.2;
+    const adjustedLatSpread = latSpread * (1 + padding);
+    const adjustedLngSpread = lngSpread * (1 + padding);
+
+    // Create new bounds based on the POI spread
+    const newBounds = [
+        [centerLat - adjustedLatSpread/2, centerLng - adjustedLngSpread/2],
+        [centerLat + adjustedLatSpread/2, centerLng + adjustedLngSpread/2]
+    ];
+
+    // Create and add the green boundary
+    currentSelectedBounds = L.rectangle(newBounds, {
+        color: "#4CAF50",
+        weight: 3,
+        fillOpacity: 0.15,
+        dashArray: '10, 15'
+    }).addTo(map);
+
+    // Fit map to the new bounds with tighter zoom
+    map.flyToBounds(newBounds, {
+        margin: [10, 10], // Reduced padding from 30 to 10
+        duration: 1.5,
+        animate: true,
+        maxZoom: 20 // Increased max zoom from 17 to 18
+    });
+
+    // Add reset button
+    let resetButton = document.querySelector('#reset-bounds-button');
+    if (!resetButton) {
+        resetButton = document.createElement('button');
+        resetButton.id = 'reset-bounds-button';
+        resetButton.className = 'btn btn-warning position-absolute m-2';
+        resetButton.style.zIndex = '1000';
+        resetButton.style.right = '10px';
+        resetButton.style.top = '10px';
+        resetButton.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Reset View';
+        resetButton.onclick = () => {
+            markers.forEach(marker => marker.setOpacity(1));
+            boundaryRectangle.setStyle({ opacity: 1, fillOpacity: 0.1 });
+            if (currentSelectedBounds) {
+                map.removeLayer(currentSelectedBounds);
+                currentSelectedBounds = null;
+            }
+            resetButton.remove();
+            map.fitBounds(bounds);
+        };
+        document.querySelector('#map').appendChild(resetButton);
+    }
+}
+
+// Add this function to handle the view selected POIs button visibility
+function handleViewSelectedButton() {
+    const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
+    let viewSelectedButton = document.querySelector('#view-selected-button');
+    
+    if (checkedBoxes.length > 0) {
+        // Create button if it doesn't exist
+        if (!viewSelectedButton) {
+            viewSelectedButton = document.createElement('button');
+            viewSelectedButton.id = 'view-selected-button';
+            viewSelectedButton.className = 'btn btn-success mb-3 ms-2';
+            viewSelectedButton.innerHTML = '<i class="bi bi-eye-fill"></i> View Selected POIs';
+            viewSelectedButton.onclick = viewSelectedPOIs;
+            document.querySelector('.controls').prepend(viewSelectedButton);
+        }
+    } else {
+        // Remove button if no checkboxes are selected
+        if (viewSelectedButton) {
+            viewSelectedButton.remove();
+        }
+    }
+}
+
+// Modify your POI item creation code to add checkbox event listener
+// Find where you create the POI item and add this after the checkbox HTML:
+item.querySelector('.poi-checkbox').addEventListener('change', handleViewSelectedButton);
