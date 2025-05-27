@@ -165,14 +165,7 @@ const bounds = [
     [45.82, 21.31]  // Northeast corner
 ];
 
-const boundaryRectangle = L.rectangle(bounds, {
-    color: "#ff7800",
-    weight: 2,
-    fillOpacity: 0.1,
-    dashArray: '5, 10',
-});
 
-boundaryRectangle.addTo(map);
 
 // Add validation when adding POIs
 map.on('click', (e) => {
