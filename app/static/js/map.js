@@ -588,17 +588,12 @@ function updateBoundsFromPOIs() {
         [Math.max(...lats) + padding, Math.max(...lngs) + padding]
     ];
     
-    // Update the boundary rectangle
-    if (boundaryRectangle) {
-        boundaryRectangle.setBounds(newBounds);
-    }
-    
     // Update the bounds constant
     bounds[0] = newBounds[0];
     bounds[1] = newBounds[1];
     
     // Fit map to new bounds
-    map.fitBounds(boundaryRectangle.getBounds());
+    // map.fitBounds(boundaryRectangle.getBounds());
     
     showToast("Map boundaries updated based on POIs");
 }
@@ -626,7 +621,7 @@ function viewSelectedPOIs() {
     });
 
     // Hide the original orange boundary
-    boundaryRectangle.setStyle({ opacity: 0, fillOpacity: 0 });
+    // boundaryRectangle.setStyle({ opacity: 0, fillOpacity: 0 });
 
     // Show only selected markers and collect their coordinates
     const selectedCoords = [];
@@ -694,7 +689,7 @@ function viewSelectedPOIs() {
         resetButton.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Reset View';
         resetButton.onclick = () => {
             markers.forEach(marker => marker.setOpacity(1));
-            boundaryRectangle.setStyle({ opacity: 1, fillOpacity: 0.1 });
+            // boundaryRectangle.setStyle({ opacity: 1, fillOpacity: 0.1 });
             if (currentSelectedBounds) {
                 map.removeLayer(currentSelectedBounds);
                 currentSelectedBounds = null;
@@ -709,10 +704,17 @@ function viewSelectedPOIs() {
     let captureButton = document.createElement('button');
     captureButton.className = 'btn btn-info position-absolute m-2';
     captureButton.style.zIndex = '1000';
-    captureButton.style.right = '120px'; // Position next to reset button
+    captureButton.style.right = '150px'; // Increase from 120px to 150px for better spacing
     captureButton.style.top = '10px';
     captureButton.innerHTML = '<i class="bi bi-camera"></i> Capture Map';
-    captureButton.onclick = captureSelectedArea;
+    captureButton.onclick = function(e) {
+        // Prevent the click event from reaching the map
+        e.stopPropagation();
+        e.preventDefault();
+        
+        // Call the capture function
+        captureSelectedArea();
+    };
     document.querySelector('#map').appendChild(captureButton);
 }
 
@@ -740,42 +742,124 @@ function handleViewSelectedButton() {
 }
 
 // Function to capture a screenshot of view selected POIs rectangle
-function captureMapScreenshot() {
+function captureSelectedArea() {
     if (!currentSelectedBounds) {
         showToast("Please select POIs first");
         return;
     }
     
-    // Get the bounds of the selection
-    const bounds = currentSelectedBounds.getBounds();
+    // Create overlay to block map interactions during capture
+    const mapOverlay = document.createElement('div');
+    mapOverlay.style.position = 'absolute';
+    mapOverlay.style.top = '0';
+    mapOverlay.style.left = '0';
+    mapOverlay.style.width = '100%';
+    mapOverlay.style.height = '100%';
+    mapOverlay.style.zIndex = '999';
+    mapOverlay.style.cursor = 'wait';
+    document.querySelector('#map').appendChild(mapOverlay);
     
-    // Use leaflet.easyPrint plugin (needs to be added to your project)
-    // Or use Leaflet built-in methods
-    const canvas = document.createElement('canvas');
-    const size = map.getSize();
-    canvas.width = size.x;
-    canvas.height = size.y;
+    showToast("Preparing map for screenshot...");
+    
+    // First, ensure map is properly positioned to the selected area
+    const bounds = currentSelectedBounds.getBounds();
+    map.fitBounds(bounds, {
+        padding: [50, 50],
+        maxZoom: 15,
+        duration: 0.5
+    });
     
     // Wait for map rendering to complete
     setTimeout(() => {
-        map.once('render', () => {
-            // Get map canvas
-            const mapCanvas = map.getRenderer(map.getContainer());
-            
-            // Create image from canvas
-            canvas.getContext('2d').drawImage(mapCanvas.canvas, 0, 0);
-            
-            // Download image
-            const link = document.createElement('a');
-            link.download = 'selected-pois.png';
-            link.href = canvas.toDataURL();
-            link.click();
-            
-            showToast("Screenshot saved!");
+        showToast("Capturing map...");
+        
+        // Close any open popups (like pressing ESC key)
+        map.closePopup();
+        
+        // Temporarily hide the green rectangle before capture
+        const originalStyle = currentSelectedBounds.options;
+        currentSelectedBounds.setStyle({
+            opacity: 0,
+            fillOpacity: 0
         });
-        map.invalidateSize(); // Force re-render
-    }, 500);
+        
+        // Hide UI controls that shouldn't be in the screenshot
+        const resetButton = document.querySelector('#reset-bounds-button');
+        const captureButton = document.querySelector('.btn-info'); // Capture button
+        const mapControls = document.querySelector('.leaflet-control-container');
+        
+        // Hide all Leaflet popups and tooltip elements
+        const popups = document.querySelectorAll('.leaflet-popup, .leaflet-tooltip');
+        popups.forEach(popup => {
+            popup.style.display = 'none';
+        });
+        
+        // Hide UI elements properly
+        if (resetButton) resetButton.style.display = 'none';
+        if (captureButton) captureButton.style.display = 'none';
+        if (mapControls) mapControls.style.display = 'none';
+        
+        // Use html2canvas to capture the map
+        html2canvas(document.getElementById('map'), {
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            scale: window.devicePixelRatio || 2,
+            backgroundColor: null
+        }).then(function(canvas) {
+            // Create download link with timestamp for unique filename
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const link = document.createElement('a');
+            link.download = `map-selection-${timestamp}.png`;
+            link.href = canvas.toDataURL('image/png');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showToast("Screenshot saved successfully!");
+            
+            // Restore the green rectangle's visibility
+            currentSelectedBounds.setStyle(originalStyle);
+            
+            // Restore UI controls
+            if (resetButton) resetButton.style.display = '';
+            if (captureButton) captureButton.style.display = '';
+            if (mapControls) mapControls.style.display = '';
+            
+            // Restore popup visibility
+            popups.forEach(popup => {
+                popup.style.display = '';
+            });
+            
+            // Remove the interaction blocker
+            if (mapOverlay && mapOverlay.parentNode) {
+                mapOverlay.parentNode.removeChild(mapOverlay);
+            }
+        }).catch(function(error) {
+            console.error("Screenshot error:", error);
+            showToast("Failed to capture screenshot");
+            
+            // Restore the green rectangle's visibility
+            currentSelectedBounds.setStyle(originalStyle);
+            
+            // Restore UI controls
+            if (resetButton) resetButton.style.display = '';
+            if (captureButton) captureButton.style.display = '';
+            if (mapControls) mapControls.style.display = '';
+            
+            // Restore popup visibility
+            popups.forEach(popup => {
+                popup.style.display = '';
+            });
+            
+            // Remove the interaction blocker even if there's an error
+            if (mapOverlay && mapOverlay.parentNode) {
+                mapOverlay.parentNode.removeChild(mapOverlay);
+            }
+        });
+    }, 1000); // Wait 1 second for map rendering to complete
 }
+
 
 // Modify your POI item creation code to add checkbox event listener
 // Find where you create the POI item and add this after the checkbox HTML:
