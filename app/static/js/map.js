@@ -807,34 +807,53 @@ function captureSelectedArea() {
             scale: window.devicePixelRatio || 2,
             backgroundColor: null
         }).then(function(canvas) {
-            // Create download link with timestamp for unique filename
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const link = document.createElement('a');
-            link.download = `map-selection-${timestamp}.png`;
-            link.href = canvas.toDataURL('image/png');
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            // Get the image data URL
+            const imageData = canvas.toDataURL('image/png');
             
-            showToast("Screenshot saved successfully!");
-            
-            // Restore the green rectangle's visibility
-            currentSelectedBounds.setStyle(originalStyle);
-            
-            // Restore UI controls
-            if (resetButton) resetButton.style.display = '';
-            if (captureButton) captureButton.style.display = '';
-            if (mapControls) mapControls.style.display = '';
-            
-            // Restore popup visibility
-            popups.forEach(popup => {
-                popup.style.display = '';
+            // Send to server instead of downloading (FIX THE URL HERE)
+            fetch("/save-screenshot", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ imageData: imageData }) // Make sure imageData is defined
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    showToast("Screenshot saved on server: " + data.filename);
+                } else {
+                    showToast("Failed to save screenshot: " + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error saving screenshot:', error);
+                showToast("Failed to save screenshot on server");
+            })
+            .finally(() => {
+                // Restore the green rectangle's visibility
+                currentSelectedBounds.setStyle(originalStyle);
+                
+                // Restore UI controls
+                if (resetButton) resetButton.style.display = '';
+                if (captureButton) captureButton.style.display = '';
+                if (mapControls) mapControls.style.display = '';
+                
+                // Restore popup visibility
+                popups.forEach(popup => {
+                    popup.style.display = '';
+                });
+                
+                // Remove the interaction blocker
+                if (mapOverlay && mapOverlay.parentNode) {
+                    mapOverlay.parentNode.removeChild(mapOverlay);
+                }
             });
-            
-            // Remove the interaction blocker
-            if (mapOverlay && mapOverlay.parentNode) {
-                mapOverlay.parentNode.removeChild(mapOverlay);
-            }
         }).catch(function(error) {
             console.error("Screenshot error:", error);
             showToast("Failed to capture screenshot");
@@ -852,7 +871,7 @@ function captureSelectedArea() {
                 popup.style.display = '';
             });
             
-            // Remove the interaction blocker even if there's an error
+            // Remove the interaction blocker
             if (mapOverlay && mapOverlay.parentNode) {
                 mapOverlay.parentNode.removeChild(mapOverlay);
             }
