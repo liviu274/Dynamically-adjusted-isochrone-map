@@ -761,8 +761,27 @@ function captureSelectedArea() {
     
     showToast("Preparing map for screenshot...");
     
-    // First, ensure map is properly positioned to the selected area
+    // Collect selected POIs coordinates
+    const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
+    const selectedPOIs = Array.from(checkedBoxes).map(checkbox => ({
+        lat: parseFloat(checkbox.dataset.lat),
+        lng: parseFloat(checkbox.dataset.lng)
+    }));
+    
+    // Get the bounds corners
     const bounds = currentSelectedBounds.getBounds();
+    const corners = {
+        northEast: {
+            lat: bounds.getNorthEast().lat,
+            lng: bounds.getNorthEast().lng
+        },
+        southWest: {
+            lat: bounds.getSouthWest().lat,
+            lng: bounds.getSouthWest().lng
+        }
+    };
+    
+    // First, ensure map is properly positioned to the selected area
     map.fitBounds(bounds, {
         padding: [50, 50],
         maxZoom: 15,
@@ -810,13 +829,17 @@ function captureSelectedArea() {
             // Get the image data URL
             const imageData = canvas.toDataURL('image/png');
             
-            // Send to server instead of downloading (FIX THE URL HERE)
+            // Send to server with POI coordinates and bounds
             fetch("/save-screenshot", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ imageData: imageData }) // Make sure imageData is defined
+                body: JSON.stringify({ 
+                    imageData: imageData,
+                    pois: selectedPOIs,
+                    bounds: corners
+                })
             })
             .then(response => {
                 if (!response.ok) {

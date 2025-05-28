@@ -42,21 +42,17 @@ def isochrones_proxy():
 @main_bp.route('/save-screenshot', methods=['POST'])
 def save_screenshot():
     try:
-        # Debugging output
-        print("Screenshot route accessed")
-        
-        # Get the image data from the request
+        # Get the image data and coordinates from the request
         data = request.json
-        if not data or 'imageData' not in data:
-            print("Missing imageData in request")
-            return jsonify({'success': False, 'error': 'Missing imageData'}), 400
-            
         image_data = data['imageData'].split(',')[1]  # Remove the data:image/png;base64 part
+        
+        # Extract POI coordinates and bounds
+        poi_coords = data.get('pois', [])
+        bounds_coords = data.get('bounds', {})
         
         # Create directory if it doesn't exist
         screenshot_dir = os.path.join(current_app.root_path, 'locals', 'map_screenshots')
         os.makedirs(screenshot_dir, exist_ok=True)
-        print(f"Saving to directory: {screenshot_dir}")
         
         # Create a unique filename with timestamp
         timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -67,11 +63,23 @@ def save_screenshot():
         with open(filepath, 'wb') as f:
             f.write(base64.b64decode(image_data))
         
-        print(f"Screenshot saved: {filename}")
+        # Save metadata in a JSON file with the same name
+        metadata_filename = f'map-screenshot-{timestamp}.json'
+        metadata_filepath = os.path.join(screenshot_dir, metadata_filename)
+        
+        with open(metadata_filepath, 'w') as f:
+            import json
+            json.dump({
+                'timestamp': timestamp,
+                'pois': poi_coords,
+                'bounds': bounds_coords
+            }, f, indent=2)
+        
         return jsonify({
             'success': True, 
             'message': f'Screenshot saved as {filename}',
-            'filename': filename
+            'filename': filename,
+            'metadata': metadata_filename
         })
         
     except Exception as e:
