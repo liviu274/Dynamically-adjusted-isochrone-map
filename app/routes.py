@@ -1,5 +1,11 @@
 import requests
-from flask import request, jsonify, Blueprint, render_template
+from flask import request, jsonify, Blueprint, render_template, current_app
+import os
+import base64
+from datetime import datetime
+
+from app import create_app
+app = create_app()
 
 main = Blueprint('main', __name__)
 
@@ -33,3 +39,4 @@ def isochrones_proxy():
         
     except requests.exceptions.RequestException as e:
         return jsonify({"error": str(e)}), 500
+    

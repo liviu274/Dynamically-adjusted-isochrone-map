@@ -37,6 +37,10 @@ ENV/
 *.db
 *.sqlite3
 
+# Local content
+app/locals/
+app/locals/map_screenshots/
+
 # IDE
 .idea/
 .vscode/
