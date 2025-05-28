@@ -1,4 +1,4 @@
-CREATE TABLE PointOfInterest (
+CREATE TABLE point_of_interest (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     latitude DOUBLE PRECISION NOT NULL,
