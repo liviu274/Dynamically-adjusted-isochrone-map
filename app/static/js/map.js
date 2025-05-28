@@ -11,6 +11,11 @@ function loadInitialPOIs(pois) {
             <h5>${poi.name}</h5>
             <p>${poi.category || 'No category'}</p>
             <p>${poi.description || 'No description'}</p>
+            <div class="mt-2">
+                <button class="btn-travel-time travel-time-btn" data-lat="${poi.latitude}" data-lng="${poi.longitude}">
+                    <i class="bi bi-clock-fill me-1"></i>Show Travel Times
+                </button>
+            </div>
         `);
         markers.push(marker);
 
@@ -33,6 +38,14 @@ function loadInitialPOIs(pois) {
                 </div>
             </div>
         `;
+
+        // Attach click event to the POI item
+        item.addEventListener('click', (e) => {
+            if (!e.target.closest('button')) {
+                map.setView([poi.latitude, poi.longitude], 16);
+                marker.openPopup();
+            }
+        });
 
         // Checkbox event
         item.querySelector('.poi-checkbox').addEventListener('change', handleViewSelectedButton);
@@ -79,7 +92,23 @@ function loadInitialPOIs(pois) {
                     console.error(error);
                 });
         });
-        // ...existing code...
+
+        // Attach travel time button event
+        marker.on('popupopen', function () {
+            setTimeout(() => {
+                const travelTimeBtn = marker.getPopup().getElement().querySelector('.travel-time-btn');
+                if (travelTimeBtn) {
+                    travelTimeBtn.addEventListener('click', function () {
+                        const btnLat = parseFloat(this.getAttribute('data-lat'));
+                        const btnLng = parseFloat(this.getAttribute('data-lng'));
+                        const minutes = parseInt(document.getElementById('time-range').value);
+                        fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
+                    });
+                } else {
+                    console.error('Travel time button not found in popup');
+                }
+            }, 100);
+        });
 
         document.getElementById('poi-list').appendChild(item);
     });
