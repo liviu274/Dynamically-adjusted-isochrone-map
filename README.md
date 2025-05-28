@@ -36,3 +36,23 @@
 ## API used for isochrome generation:|
   https://openrouteservice.org/
 
+
+## 🔧 Database Setup Instructions
+
+To ensure the application works correctly with data persistence, follow these steps to set up the PostgreSQL database:
+
+1. **Run the SQL Script**  
+   Execute the `bd.sql` file in your local PostgreSQL instance to create and initialize the required database schema.
+
+2. **Install PostgreSQL Package for Python**  
+   Use `pip` to install the PostgreSQL adapter for Python:
+   ```bash
+   pip install psycopg2-binary
+
+**Update Database Credentials**  
+   Open the `app/config.py` file and update the `SQLALCHEMY_DATABASE_URI` with your PostgreSQL username and password:
+   ```python
+   SQLALCHEMY_DATABASE_URI = 'postgresql://<your_username>:<your_password>@localhost:5432/mds'
+   ```
+   Replace `<your_username>` and `<your_password>` with your actual PostgreSQL credentials.
+

@@ -1,12 +1,17 @@
 import requests
 from flask import request, jsonify, Blueprint, render_template
 from app.config import Config
+from app.models.poi import PointOfInterest
+
 
 main_bp = Blueprint('main', __name__)
 
 @main_bp.route('/')
 def index():
-    return render_template('index.html', foursquare_api_key=Config.FOURSQUARE_API_KEY)
+    pois = PointOfInterest.query.all()
+    poi_list = [poi.to_dict() for poi in pois]
+    print(f"POI List: {poi_list}")  # Debugging line to check POI data
+    return render_template('index.html', foursquare_api_key=Config.FOURSQUARE_API_KEY,initial_pois=poi_list)
 
 @main_bp.route('/api/isochrones', methods=['POST'])
 def isochrones_proxy():

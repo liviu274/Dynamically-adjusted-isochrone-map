@@ -7,8 +7,9 @@ class Config:
     # Flask configuration
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'your-secret-key'
     
-    # Database configuration
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///app.db'
+    # Database configuration !important: replace mariarebecca and rebecuta with your actual PostgreSQL username and password
+    # If DATABASE_URL is set in the environment, use it; otherwise, use the default PostgreSQL URI
+    SQLALCHEMY_DATABASE_URI = 'postgresql://mariarebecca:rebecuta@localhost:5432/mds' 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Third-party API keys
