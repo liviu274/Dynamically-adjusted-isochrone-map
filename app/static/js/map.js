@@ -1,3 +1,77 @@
+// Rate limit error function - must be defined before fetchAndDisplayIsochrones
+function showRateLimitError(errorMessage = '') {
+    // Log to console for debugging
+    console.error(`API Rate limit exceeded: ${errorMessage}`);
+    
+    const errorElement = document.getElementById('rate-limit-error');
+    if (!errorElement) {
+        console.error('Rate limit error element not found');
+        showToast('API rate limit exceeded. Please wait before making more requests.');
+        return;
+    }
+    
+    // Create countdown timer element
+    let secondsLeft = 60;
+    
+    // Update error message with countdown and actual error if available
+    const messageSpan = errorElement.querySelector('.alert-content span');
+    if (messageSpan) {
+        let message = `API rate limit exceeded. Please wait <span class="countdown-timer">${secondsLeft}</span> seconds before making more requests.`;
+        
+        // Add API-specific message if available
+        if (errorMessage && errorMessage.length > 0) {
+            message += `<br><small class="text-muted">${errorMessage}</small>`;
+        }
+        
+        messageSpan.innerHTML = message;
+    }
+    
+    // Apply fade-in animation
+    errorElement.style.opacity = '0';
+    errorElement.classList.remove('d-none');
+    void errorElement.offsetWidth;
+    errorElement.style.transition = 'opacity 0.5s ease-in-out';
+    errorElement.style.opacity = '1';
+    
+    // Clear existing interval if there is one
+    if (errorElement.dataset.intervalId) {
+        clearInterval(parseInt(errorElement.dataset.intervalId));
+    }
+    
+    // Start countdown
+    const countdownInterval = setInterval(() => {
+        secondsLeft--;
+        const countdownElement = errorElement.querySelector('.countdown-timer');
+        if (countdownElement) countdownElement.textContent = secondsLeft;
+        
+        if (secondsLeft <= 0) {
+            clearInterval(countdownInterval);
+            errorElement.style.opacity = '0';
+            setTimeout(() => {
+                errorElement.classList.add('d-none');
+                errorElement.style.opacity = '1';
+            }, 500);
+        }
+    }, 1000);
+    
+    errorElement.dataset.intervalId = countdownInterval;
+    
+    // Add event listener to dismiss button
+    const dismissBtn = errorElement.querySelector('#dismiss-rate-limit');
+    if (dismissBtn) {
+        dismissBtn.addEventListener('click', function() {
+            if (errorElement.dataset.intervalId) {
+                clearInterval(parseInt(errorElement.dataset.intervalId));
+            }
+            errorElement.style.opacity = '0';
+            setTimeout(() => {
+                errorElement.classList.add('d-none');
+                errorElement.style.opacity = '1';
+            }, 500);
+        });
+    }
+}
+
 const map = L.map('map').setView([45.76, 21.23], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
@@ -22,7 +96,7 @@ const map = L.map('map').setView([45.76, 21.23], 13);
 
     let isochroneCircle = null;
     let selectedMarker = null;
-    const markers = [];
+    let markers = []; // Array to track all POI markers
     let editingItem = null;
     let isochronesShowing = false;
 
@@ -37,111 +111,146 @@ const map = L.map('map').setView([45.76, 21.23], 13);
 
     // Function to fetch and display isochrones
     const fetchAndDisplayIsochrones = (lat, lng, customTimeMinutes = null) => {
-        // Force convert customTimeMinutes to a number
+        // Show loading indicator
+        showToast("Loading isochrones...");
+        
+        // Initialize time ranges based on context
+        let timeRanges = [5]; // Default for right-click: just one 5-min isochrone (changed from 10)
+        let isCustomRequest = false;
+        
         if (customTimeMinutes) {
-            customTimeMinutes = parseInt(customTimeMinutes);
-            console.log("Custom time added:", customTimeMinutes);
+            // This is a request from "Show Travel Times" button
+            const requestedTime = parseInt(customTimeMinutes);
+            // Show two isochrones - half the time and full time
+            timeRanges = [Math.ceil(requestedTime/2), requestedTime];
+            isCustomRequest = true;
         }
         
-        console.log('fetchAndDisplayIsochrones called with:');
-        console.log('lat:', lat, 'lng:', lng);
-        console.log('customTimeMinutes (parsed):', customTimeMinutes);
+        const params = new URLSearchParams({
+            origin_lat: lat,
+            origin_lng: lng,
+            times: timeRanges.join(','),
+            mode: 'driving-car'
+        });
         
-        // Initialize time ranges array to include both default and custom
-        let timeRanges = [];
-        
-        // Always include a default 5 minute isochrone
-        timeRanges.push(300); // 5 minutes = 300 seconds
-        
-        // Add custom time if it's different from default and valid
-        if (customTimeMinutes && !isNaN(customTimeMinutes) && customTimeMinutes !== 5) {
-            // Convert minutes to seconds for the API
-            const timeSeconds = customTimeMinutes * 60;
-            timeRanges.push(timeSeconds);
-            console.log('Added custom time (seconds):', timeSeconds);
-        }
-        
-        console.log('Final time ranges array:', timeRanges);
-        
-        const requestBody = {
-            locations: [[lng, lat]],
-            range: timeRanges,
-            range_type: "time"
-        };
-        
-        console.log('API request body:', JSON.stringify(requestBody));
-
-        // Use our proxy endpoint instead of calling the API directly
-        fetch("/api/isochrones", {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody)
-        })
-        .then(response => {
-            if (!response.ok) {
-                if (response.status === 429) {
-                    throw new Error("Rate limit exceeded. Please try again later.");
+        fetch(`/api/isochrones?${params}`)
+            .then(response => {
+                if (!response.ok) {
+                    console.error(`API error: ${response.status} - ${response.statusText}`);
+                    
+                    // Directly check for any rate limiting or quota errors - more comprehensive
+                    if (response.status === 429 || response.status === 403) {
+                        showRateLimitError();
+                        throw new Error(`Rate limit exceeded (${response.status})`);
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                throw new Error(`API error: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            // Clear existing isochrones
-            clearIsochrones();
-            
-            // Process the response
-            if (data.type === 'FeatureCollection' && data.features && data.features.length > 0) {
-                console.log(`Processing ${data.features.length} isochrone features`);
+                return response.json();
+            })
+            .then(data => {
+                // Check if the response contains an error message about rate limiting
+                if (data.status === 'error' && data.message && 
+                    (data.message.toLowerCase().includes('rate') || 
+                     data.message.toLowerCase().includes('limit') || 
+                     data.message.toLowerCase().includes('quota'))) {
+                    showRateLimitError();
+                    throw new Error('API rate limit detected in response');
+                }
                 
-                data.features.forEach((feature, index) => {
-                    // Extract minutes from feature properties (value is in seconds)
-                    const seconds = feature.properties.value;
-                    const minutes = Math.round(seconds / 60);
+                clearIsochrones();
+                
+                if (data.features) {
+                    // For custom requests (Show Travel Times button), process features in reverse order
+                    // so that smaller isochrone appears on top
+                    let processFeatures = [...data.features];
                     
-                    console.log(`Feature ${index}: ${minutes} minutes`);
-                    
-                    // Determine color based on time range
-                    let color;
-                    if (minutes === 5) {
-                        color = '#9b5de5'; // Purple for default 5 min 
-                    } else {
-                        color = '#e63946'; // Red for custom time
+                    if (isCustomRequest && processFeatures.length > 1) {
+                        // Process in reverse order (outer first, inner last)
+                        processFeatures.reverse();
                     }
                     
-                    // Create isochrone layer with appropriate color
-                    const isoLayer = L.geoJSON(feature, {
-                        style: {
-                            color: color,
-                            fillColor: color,
-                            fillOpacity: 0.2,
-                            weight: 2,
-                            opacity: 0.7
+                    // Process each isochrone feature
+                    processFeatures.forEach((feature, index) => {
+                        // Customize colors based on context
+                        let color;
+                        
+                        if (isCustomRequest) {
+                            // For "Show Travel Times": Purple for inner, Red for outer
+                            // Since we reversed the array, we need to flip the index check
+                            const originalIndex = isCustomRequest ? (processFeatures.length - 1 - index) : index;
+                            color = originalIndex === 0 ? "#8a2be2" : "#ff0000"; // Purple for first, Red for second
+                        } else {
+                            // For right-click: Just one purple isochrone
+                            color = "#8a2be2"; // Purple
                         }
-                    }).addTo(map);
-                    
-                    // Add tooltip showing the time
-                    isoLayer.bindTooltip(`${minutes} minute travel time`, {
-                        permanent: false,
-                        direction: 'center'
+                        
+                        // Get time in minutes for tooltip
+                        const minutes = feature.properties.value / 60;
+                        
+                        const layer = L.geoJSON(feature, {
+                            style: {
+                                color: color,
+                                weight: 2,
+                                opacity: 0.8,
+                                fillColor: color,
+                                fillOpacity: 0.2
+                            }
+                        })
+                        .bindTooltip(`<div class="time-tooltip"><span class="neon-text">${minutes} mins</span></div>`, {
+                            permanent: false,
+                            direction: 'center',
+                            className: 'isochrone-tooltip',
+                            opacity: 0.95
+                        })
+                        .addTo(map);
+                        
+                        // Add mouseover/mouseout events for better UX
+                        layer.on('mouseover', function(e) {
+                            this.setStyle({
+                                fillOpacity: 0.4,
+                                weight: 3
+                            });
+                            this.openTooltip(e.latlng);
+                        });
+                        
+                        layer.on('mouseout', function() {
+                            this.setStyle({
+                                fillOpacity: 0.2,
+                                weight: 2
+                            });
+                            this.closeTooltip();
+                        });
+                        
+                        isochroneLayers.push(layer);
                     });
                     
-                    isochroneLayers.push(isoLayer);
-                });
+                    // Make sure the inner isochrone is displayed on top
+                    if (isCustomRequest && isochroneLayers.length > 1) {
+                        isochroneLayers[isochroneLayers.length - 1].bringToFront();
+                    }
+                    
+                    isochronesShowing = true;
+                    showToast(`Displaying travel time isochrones`);
+                } else {
+                    showToast("No isochrone data available");
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching isochrones:', error);
                 
-                isochronesShowing = true;
-            } else {
-                console.error('No features found in API response');
-                console.log('API response data:', data);
-                showToast('No travel time data available for this location.');
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching isochrones:', error);
-            showToast(error.message || 'Failed to load travel times. Please try again.');
-        });
+                // Expanded error message detection - make this more comprehensive
+                const errorMsg = error.message ? error.message.toLowerCase() : '';
+                if (errorMsg.includes('rate') || 
+                    errorMsg.includes('limit') || 
+                    errorMsg.includes('429') || 
+                    errorMsg.includes('quota') ||
+                    errorMsg.includes('exceeded')) {
+                    console.log('Rate limit error detected - showing error message');
+                    showRateLimitError(); // Always call this for any rate-related error
+                } else {
+                    showToast('Failed to load isochrones. Please try again.');
+                }
+            });
     };
     
     // Clear isochrones
