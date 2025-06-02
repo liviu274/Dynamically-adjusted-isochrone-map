@@ -1,3 +1,77 @@
+// Rate limit error function - must be defined before fetchAndDisplayIsochrones
+function showRateLimitError(errorMessage = '') {
+    // Log to console for debugging
+    console.error(`API Rate limit exceeded: ${errorMessage}`);
+    
+    const errorElement = document.getElementById('rate-limit-error');
+    if (!errorElement) {
+        console.error('Rate limit error element not found');
+        showToast('API rate limit exceeded. Please wait before making more requests.');
+        return;
+    }
+    
+    // Create countdown timer element
+    let secondsLeft = 60;
+    
+    // Update error message with countdown and actual error if available
+    const messageSpan = errorElement.querySelector('.alert-content span');
+    if (messageSpan) {
+        let message = `API rate limit exceeded. Please wait <span class="countdown-timer">${secondsLeft}</span> seconds before making more requests.`;
+        
+        // Add API-specific message if available
+        if (errorMessage && errorMessage.length > 0) {
+            message += `<br><small class="text-muted">${errorMessage}</small>`;
+        }
+        
+        messageSpan.innerHTML = message;
+    }
+    
+    // Apply fade-in animation
+    errorElement.style.opacity = '0';
+    errorElement.classList.remove('d-none');
+    void errorElement.offsetWidth;
+    errorElement.style.transition = 'opacity 0.5s ease-in-out';
+    errorElement.style.opacity = '1';
+    
+    // Clear existing interval if there is one
+    if (errorElement.dataset.intervalId) {
+        clearInterval(parseInt(errorElement.dataset.intervalId));
+    }
+    
+    // Start countdown
+    const countdownInterval = setInterval(() => {
+        secondsLeft--;
+        const countdownElement = errorElement.querySelector('.countdown-timer');
+        if (countdownElement) countdownElement.textContent = secondsLeft;
+        
+        if (secondsLeft <= 0) {
+            clearInterval(countdownInterval);
+            errorElement.style.opacity = '0';
+            setTimeout(() => {
+                errorElement.classList.add('d-none');
+                errorElement.style.opacity = '1';
+            }, 500);
+        }
+    }, 1000);
+    
+    errorElement.dataset.intervalId = countdownInterval;
+    
+    // Add event listener to dismiss button
+    const dismissBtn = errorElement.querySelector('#dismiss-rate-limit');
+    if (dismissBtn) {
+        dismissBtn.addEventListener('click', function() {
+            if (errorElement.dataset.intervalId) {
+                clearInterval(parseInt(errorElement.dataset.intervalId));
+            }
+            errorElement.style.opacity = '0';
+            setTimeout(() => {
+                errorElement.classList.add('d-none');
+                errorElement.style.opacity = '1';
+            }, 500);
+        });
+    }
+}
+
 const map = L.map('map').setView([45.76, 21.23], 13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors'
@@ -113,163 +187,222 @@ function loadInitialPOIs(pois) {
         document.getElementById('poi-list').appendChild(item);
     });
 
-}
+    // Force Leaflet to reload the icon defaults
+    delete L.Icon.Default.prototype._getIconUrl;
+    L.Icon.Default.imagePath = '';
+    L.Icon.Default._getIconUrl = L.Icon.Default.prototype._getIconUrl;
 
-// Complete replacement of the default icon settings
-L.Icon.Default.mergeOptions({
-    iconUrl: '/static/images/pin.png',
-    iconRetinaUrl: '/static/images/pin.png',  // Same image for retina displays
-    iconSize: [32, 32],  // Adjust size to match your pin image dimensions
-    iconAnchor: [16, 32], // Bottom center of the icon
-    popupAnchor: [0, -32], // Popup appears above the icon
-    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-    shadowSize: [41, 41],
-    shadowAnchor: [12, 41]
-});
+    let isochroneCircle = null;
+    let selectedMarker = null;
+    let markers = []; // Array to track all POI markers
+    let editingItem = null;
+    let isochronesShowing = false;
 
-// Force Leaflet to reload the icon defaults
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.imagePath = '';
-L.Icon.Default._getIconUrl = L.Icon.Default.prototype._getIconUrl;
-
-let isochroneCircle = null;
-let selectedMarker = null;
-const markers = [];
-let editingItem = null;
-let isochronesShowing = false;
-
-const showToast = (msg) => {
-    const container = document.getElementById("toast-container");
-    const toast = document.createElement("div");
-    toast.className = "toast";
-    toast.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>${msg}`;
-    container.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-};
-
-// Function to fetch and display isochrones
-const fetchAndDisplayIsochrones = (lat, lng, customTimeMinutes = null) => {
-    // Force convert customTimeMinutes to a number
-    if (customTimeMinutes) {
-        customTimeMinutes = parseInt(customTimeMinutes);
-        console.log("Custom time added:", customTimeMinutes);
-    }
-
-    console.log('fetchAndDisplayIsochrones called with:');
-    console.log('lat:', lat, 'lng:', lng);
-    console.log('customTimeMinutes (parsed):', customTimeMinutes);
-
-    // Initialize time ranges array to include both default and custom
-    let timeRanges = [];
-
-    // Always include a default 5 minute isochrone
-    timeRanges.push(300); // 5 minutes = 300 seconds
-
-    // Add custom time if it's different from default and valid
-    if (customTimeMinutes && !isNaN(customTimeMinutes) && customTimeMinutes !== 5) {
-        // Convert minutes to seconds for the API
-        const timeSeconds = customTimeMinutes * 60;
-        timeRanges.push(timeSeconds);
-        console.log('Added custom time (seconds):', timeSeconds);
-    }
-
-    console.log('Final time ranges array:', timeRanges);
-
-    const requestBody = {
-        locations: [[lng, lat]],
-        range: timeRanges,
-        range_type: "time"
+    const showToast = (msg) => {
+        const container = document.getElementById("toast-container");
+        const toast = document.createElement("div");
+        toast.className = "toast";
+        toast.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>${msg}`;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
     };
 
-    console.log('API request body:', JSON.stringify(requestBody));
+    // Function to fetch and display isochrones - enhanced version with database support
+    const fetchAndDisplayIsochrones = (lat, lng, customTimeMinutes = null) => {
+        // Show loading indicator
+        showToast("Loading isochrones...");
+        
+        // Force convert customTimeMinutes to a number
+        if (customTimeMinutes) {
+            customTimeMinutes = parseInt(customTimeMinutes);
+            console.log("Custom time added:", customTimeMinutes);
+        }
 
-    // Use our proxy endpoint instead of calling the API directly
-    fetch("/api/isochrones", {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody)
-    })
-        .then(response => {
-            if (!response.ok) {
-                if (response.status === 429) {
-                    throw new Error("Rate limit exceeded. Please try again later.");
-                }
-                throw new Error(`API error: ${response.status}`);
-            }
-            return response.json();
+        console.log('fetchAndDisplayIsochrones called with:');
+        console.log('lat:', lat, 'lng:', lng);
+        console.log('customTimeMinutes (parsed):', customTimeMinutes);
+
+        // Initialize time ranges based on context
+        let timeRanges = [5]; // Default for right-click: just one 5-min isochrone
+        let isCustomRequest = false;
+        
+        if (customTimeMinutes && !isNaN(customTimeMinutes)) {
+            // This is a request from "Show Travel Times" button
+            const requestedTime = parseInt(customTimeMinutes);
+            // Show two isochrones - half the time and full time
+            timeRanges = [Math.ceil(requestedTime/2), requestedTime];
+            isCustomRequest = true;
+            console.log('Custom request - time ranges:', timeRanges);
+        }
+
+        // Prepare request body for database-compatible API
+        const requestBody = {
+            origin_lat: lat,
+            origin_lng: lng,
+            times: timeRanges.join(','),
+            mode: 'driving-car',
+            locations: [[lng, lat]], // For backwards compatibility with direct API calls
+            range: timeRanges.map(t => t * 60), // Convert to seconds for ORS API
+            range_type: "time"
+        };
+
+        console.log('API request body:', JSON.stringify(requestBody));
+
+        // Use our enhanced proxy endpoint that supports database functionality
+        fetch("/api/isochrones", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
         })
-        .then(data => {
-            // Clear existing isochrones
-            clearIsochrones();
+            .then(response => {
+                if (!response.ok) {
+                    console.error(`API error: ${response.status} - ${response.statusText}`);
+                    
+                    // Check for rate limiting or quota errors
+                    if (response.status === 429 || response.status === 403) {
+                        showRateLimitError();
+                        throw new Error(`Rate limit exceeded (${response.status})`);
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Check if the response contains an error message about rate limiting
+                if (data.status === 'error' && data.message && 
+                    (data.message.toLowerCase().includes('rate') || 
+                     data.message.toLowerCase().includes('limit') || 
+                     data.message.toLowerCase().includes('quota'))) {
+                    showRateLimitError();
+                    throw new Error('API rate limit detected in response');
+                }
+                
+                clearIsochrones();
 
-            // Process the response
-            if (data.type === 'FeatureCollection' && data.features && data.features.length > 0) {
-                console.log(`Processing ${data.features.length} isochrone features`);
+                // Handle both database and direct API response formats
+                let features = [];
+                if (data.type === 'FeatureCollection' && data.features) {
+                    features = data.features;
+                } else if (data.features) {
+                    features = data.features;
+                } else {
+                    console.error('Unexpected API response format:', data);
+                    showToast("No isochrone data available");
+                    return;
+                }
 
-                data.features.forEach((feature, index) => {
-                    // Extract minutes from feature properties (value is in seconds)
-                    const seconds = feature.properties.value;
-                    const minutes = Math.round(seconds / 60);
+                if (features && features.length > 0) {
+                    console.log(`Processing ${features.length} isochrone features`);
 
-                    console.log(`Feature ${index}: ${minutes} minutes`);
-
-                    // Determine color based on time range
-                    let color;
-                    if (minutes === 5) {
-                        color = '#9b5de5'; // Purple for default 5 min 
-                    } else {
-                        color = '#e63946'; // Red for custom time
+                    // For custom requests, process features in reverse order
+                    let processFeatures = [...features];
+                    if (isCustomRequest && processFeatures.length > 1) {
+                        processFeatures.reverse();
                     }
 
-                    // Create isochrone layer with appropriate color
-                    const isoLayer = L.geoJSON(feature, {
-                        style: {
-                            color: color,
-                            fillColor: color,
-                            fillOpacity: 0.2,
-                            weight: 2,
-                            opacity: 0.7
-                        }
-                    }).addTo(map);
+                    processFeatures.forEach((feature, index) => {
+                        // Extract minutes from feature properties (value is in seconds)
+                        const seconds = feature.properties.value;
+                        const minutes = Math.round(seconds / 60);
 
-                    // Add tooltip showing the time
-                    isoLayer.bindTooltip(`${minutes} minute travel time`, {
-                        permanent: false,
-                        direction: 'center'
+                        console.log(`Feature ${index}: ${minutes} minutes`);
+
+                        // Determine color based on context and time range
+                        let color;
+                        if (isCustomRequest) {
+                            // For "Show Travel Times": Purple for inner, Red for outer
+                            const originalIndex = processFeatures.length - 1 - index;
+                            color = originalIndex === 0 ? "#8a2be2" : "#ff0000"; // Purple for first, Red for second
+                        } else {
+                            // For right-click: Purple for default
+                            color = "#8a2be2"; // Purple
+                        }
+
+                        // Create isochrone layer with enhanced styling
+                        const layer = L.geoJSON(feature, {
+                            style: {
+                                color: color,
+                                weight: 2,
+                                opacity: 0.8,
+                                fillColor: color,
+                                fillOpacity: 0.2
+                            }
+                        })
+                        .bindTooltip(`<div class="time-tooltip"><span class="neon-text">${minutes} mins</span></div>`, {
+                            permanent: false,
+                            direction: 'center',
+                            className: 'isochrone-tooltip',
+                            opacity: 0.95
+                        })
+                        .addTo(map);
+
+                        // Add enhanced mouseover/mouseout events for better UX
+                        layer.on('mouseover', function(e) {
+                            this.setStyle({
+                                fillOpacity: 0.4,
+                                weight: 3
+                            });
+                            this.openTooltip(e.latlng);
+                        });
+
+                        layer.on('mouseout', function() {
+                            this.setStyle({
+                                fillOpacity: 0.2,
+                                weight: 2
+                            });
+                            this.closeTooltip();
+                        });
+
+                        isochroneLayers.push(layer);
                     });
 
-                    isochroneLayers.push(isoLayer);
-                });
+                    // Make sure the inner isochrone is displayed on top
+                    if (isCustomRequest && isochroneLayers.length > 1) {
+                        isochroneLayers[isochroneLayers.length - 1].bringToFront();
+                    }
 
-                isochronesShowing = true;
-            } else {
-                console.error('No features found in API response');
-                console.log('API response data:', data);
-                showToast('No travel time data available for this location.');
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching isochrones:', error);
-            showToast(error.message || 'Failed to load travel times. Please try again.');
-        });
-};
+                    isochronesShowing = true;
+                    showToast(`Displaying travel time isochrones`);
+                } else {
+                    console.error('No features found in API response');
+                    console.log('API response data:', data);
+                    showToast('No travel time data available for this location.');
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching isochrones:', error);
+                
+                // Enhanced error message detection
+                const errorMsg = error.message ? error.message.toLowerCase() : '';
+                if (errorMsg.includes('rate') || 
+                    errorMsg.includes('limit') || 
+                    errorMsg.includes('429') || 
+                    errorMsg.includes('quota') ||
+                    errorMsg.includes('exceeded')) {
+                    console.log('Rate limit error detected - showing error message');
+                    showRateLimitError();
+                } else {
+                    showToast(error.message || 'Failed to load travel times. Please try again.');
+                }
+            });
+    };
 
-// Clear isochrones
-const isochroneLayers = [];
-const clearIsochrones = () => {
-    isochroneLayers.forEach(layer => map.removeLayer(layer));
-    isochroneLayers.length = 0;
-    isochronesShowing = false; // Reset flag when cleared
-};
+    // Clear isochrones
+    const isochroneLayers = [];
+    const clearIsochrones = () => {
+        isochroneLayers.forEach(layer => map.removeLayer(layer));
+        isochroneLayers.length = 0;
+        isochronesShowing = false; // Reset flag when cleared
+    };
 
-function clearJustIsochrones() {
-    if (isochronesShowing) {
-        console.log('Clearing only isochrones');
-        clearIsochrones();
+    function clearJustIsochrones() {
+        if (isochronesShowing) {
+            console.log('Clearing only isochrones');
+            clearIsochrones();
+        }
     }
-}
 
 // Add this after the map initialization code
 const bounds = [
@@ -612,30 +745,30 @@ document.querySelector('.map-container').appendChild(trafficBadge);
 // Add this function after your existing bounds declaration
 function updateBoundsFromPOIs() {
     if (markers.length === 0) return; // No POIs to update from
-
+    
     // Get all POI coordinates
     const lats = markers.map(marker => marker.getLatLng().lat);
     const lngs = markers.map(marker => marker.getLatLng().lng);
-
+    
     // Calculate new bounds with padding
     const padding = 0.02; // Approximately 2km padding
     const newBounds = [
         [Math.min(...lats) - padding, Math.min(...lngs) - padding],
         [Math.max(...lats) + padding, Math.max(...lngs) + padding]
     ];
-
+    
     // Update the boundary rectangle
     if (boundaryRectangle) {
         boundaryRectangle.setBounds(newBounds);
     }
-
+    
     // Update the bounds constant
     bounds[0] = newBounds[0];
     bounds[1] = newBounds[1];
-
+    
     // Fit map to new bounds
     map.fitBounds(boundaryRectangle.getBounds());
-
+    
     showToast("Map boundaries updated based on POIs");
 }
 
@@ -662,7 +795,7 @@ function viewSelectedPOIs() {
     });
 
     // Hide the original orange boundary
-    boundaryRectangle.setStyle({ opacity: 0, fillOpacity: 0 });
+    // boundaryRectangle.setStyle({ opacity: 0, fillOpacity: 0 });
 
     // Show only selected markers and collect their coordinates
     const selectedCoords = [];
@@ -730,7 +863,7 @@ function viewSelectedPOIs() {
         resetButton.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Reset View';
         resetButton.onclick = () => {
             markers.forEach(marker => marker.setOpacity(1));
-            boundaryRectangle.setStyle({ opacity: 1, fillOpacity: 0.1 });
+            // boundaryRectangle.setStyle({ opacity: 1, fillOpacity: 0.1 });
             if (currentSelectedBounds) {
                 map.removeLayer(currentSelectedBounds);
                 currentSelectedBounds = null;
@@ -740,6 +873,23 @@ function viewSelectedPOIs() {
         };
         document.querySelector('#map').appendChild(resetButton);
     }
+
+    // Add capture button
+    let captureButton = document.createElement('button');
+    captureButton.className = 'btn btn-info position-absolute m-2';
+    captureButton.style.zIndex = '1000';
+    captureButton.style.right = '150px'; // Increase from 120px to 150px for better spacing
+    captureButton.style.top = '10px';
+    captureButton.innerHTML = '<i class="bi bi-camera"></i> Capture Map';
+    captureButton.onclick = function(e) {
+        // Prevent the click event from reaching the map
+        e.stopPropagation();
+        e.preventDefault();
+        
+        // Call the capture function
+        captureSelectedArea();
+    };
+    document.querySelector('#map').appendChild(captureButton);
 }
 
 // Add this function to handle the view selected POIs button visibility
@@ -764,6 +914,168 @@ function handleViewSelectedButton() {
         }
     }
 }
+
+// Function to capture a screenshot of view selected POIs rectangle
+function captureSelectedArea() {
+    if (!currentSelectedBounds) {
+        showToast("Please select POIs first");
+        return;
+    }
+    
+    // Create overlay to block map interactions during capture
+    const mapOverlay = document.createElement('div');
+    mapOverlay.style.position = 'absolute';
+    mapOverlay.style.top = '0';
+    mapOverlay.style.left = '0';
+    mapOverlay.style.width = '100%';
+    mapOverlay.style.height = '100%';
+    mapOverlay.style.zIndex = '999';
+    mapOverlay.style.cursor = 'wait';
+    document.querySelector('#map').appendChild(mapOverlay);
+    
+    showToast("Preparing map for screenshot...");
+    
+    // Collect selected POIs coordinates
+    const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
+    const selectedPOIs = Array.from(checkedBoxes).map(checkbox => ({
+        lat: parseFloat(checkbox.dataset.lat),
+        lng: parseFloat(checkbox.dataset.lng)
+    }));
+    
+    // Get the bounds corners
+    const bounds = currentSelectedBounds.getBounds();
+    const corners = {
+        northEast: {
+            lat: bounds.getNorthEast().lat,
+            lng: bounds.getNorthEast().lng
+        },
+        southWest: {
+            lat: bounds.getSouthWest().lat,
+            lng: bounds.getSouthWest().lng
+        }
+    };
+    
+    // First, ensure map is properly positioned to the selected area
+    map.fitBounds(bounds, {
+        padding: [50, 50],
+        maxZoom: 15,
+        duration: 0.5
+    });
+    
+    // Wait for map rendering to complete
+    setTimeout(() => {
+        showToast("Capturing map...");
+        
+        // Close any open popups (like pressing ESC key)
+        map.closePopup();
+        
+        // Temporarily hide the green rectangle before capture
+        const originalStyle = currentSelectedBounds.options;
+        currentSelectedBounds.setStyle({
+            opacity: 0,
+            fillOpacity: 0
+        });
+        
+        // Hide UI controls that shouldn't be in the screenshot
+        const resetButton = document.querySelector('#reset-bounds-button');
+        const captureButton = document.querySelector('.btn-info'); // Capture button
+        const mapControls = document.querySelector('.leaflet-control-container');
+        
+        // Hide all Leaflet popups and tooltip elements
+        const popups = document.querySelectorAll('.leaflet-popup, .leaflet-tooltip');
+        popups.forEach(popup => {
+            popup.style.display = 'none';
+        });
+        
+        // Hide UI elements properly
+        if (resetButton) resetButton.style.display = 'none';
+        if (captureButton) captureButton.style.display = 'none';
+        if (mapControls) mapControls.style.display = 'none';
+        
+        // Use html2canvas to capture the map
+        html2canvas(document.getElementById('map'), {
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            scale: window.devicePixelRatio || 2,
+            backgroundColor: null
+        }).then(function(canvas) {
+            // Get the image data URL
+            const imageData = canvas.toDataURL('image/png');
+            
+            // Send to server with POI coordinates and bounds
+            fetch("/save-screenshot", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    imageData: imageData,
+                    pois: selectedPOIs,
+                    bounds: corners
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    showToast("Screenshot saved on server: " + data.filename);
+                } else {
+                    showToast("Failed to save screenshot: " + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error saving screenshot:', error);
+                showToast("Failed to save screenshot on server");
+            })
+            .finally(() => {
+                // Restore the green rectangle's visibility
+                currentSelectedBounds.setStyle(originalStyle);
+                
+                // Restore UI controls
+                if (resetButton) resetButton.style.display = '';
+                if (captureButton) captureButton.style.display = '';
+                if (mapControls) mapControls.style.display = '';
+                
+                // Restore popup visibility
+                popups.forEach(popup => {
+                    popup.style.display = '';
+                });
+                
+                // Remove the interaction blocker
+                if (mapOverlay && mapOverlay.parentNode) {
+                    mapOverlay.parentNode.removeChild(mapOverlay);
+                }
+            });
+        }).catch(function(error) {
+            console.error("Screenshot error:", error);
+            showToast("Failed to capture screenshot");
+            
+            // Restore the green rectangle's visibility
+            currentSelectedBounds.setStyle(originalStyle);
+            
+            // Restore UI controls
+            if (resetButton) resetButton.style.display = '';
+            if (captureButton) captureButton.style.display = '';
+            if (mapControls) mapControls.style.display = '';
+            
+            // Restore popup visibility
+            popups.forEach(popup => {
+                popup.style.display = '';
+            });
+            
+            // Remove the interaction blocker
+            if (mapOverlay && mapOverlay.parentNode) {
+                mapOverlay.parentNode.removeChild(mapOverlay);
+            }
+        });
+    }, 1000); // Wait 1 second for map rendering to complete
+}
+
 
 // Modify your POI item creation code to add checkbox event listener
 // Find where you create the POI item and add this after the checkbox HTML:
