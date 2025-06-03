@@ -88,3 +88,10 @@ def save_screenshot():
             'success': False,
             'error': str(e)
         }), 500
+
+# Add this route to your main blueprint
+
+@main_bp.route('/time-deformed')
+def time_deformed():
+    """Time-deformed maps page"""
+    return render_template('timedeformed.html')

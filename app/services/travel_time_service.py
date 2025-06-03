@@ -267,3 +267,15 @@ def get_travel_times(origin_lat, origin_lng, destinations=None):
             "status": "error",
             "message": f"Exception: {str(e)}"
         }
+
+def get_travel_times_matrix(self, pois):
+    """Get matrix of travel times between POIs using OpenRouteService API"""
+    url = "https://api.openrouteservice.org/v2/matrix/driving-car"
+    
+    headers = {
+        'Authorization': self.api_key,  # REMOVED 'Bearer ' prefix
+        'Content-Type': 'application/json; charset=utf-8'
+    }
+    
+    # Convert POIs to the format required by ORS (lng, lat)
+    locations = [[poi['lng'], poi['lat']] for poi in pois]

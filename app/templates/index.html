@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
 
     <style>
+        /* IDENTICAL NAVBAR CSS FOR BOTH PAGES */
         :root {
             --neon-primary: #00ffa3;
             --neon-secondary: #0088ff;
@@ -36,18 +37,46 @@
             line-height: 1.6;
         }
 
+        /* Navbar styling */
         .navbar {
             background: rgba(18, 21, 31, 0.8);
             backdrop-filter: blur(10px);
             border-bottom: 1px solid rgba(0, 255, 163, 0.1);
             padding: 1rem 0;
+            margin-bottom: 20px;
         }
 
         .navbar-brand {
             font-family: 'Syncopate', sans-serif;
+            font-weight: bold;
             color: var(--neon-primary);
             font-size: 1.5rem;
             text-shadow: 0 0 10px rgba(0, 255, 163, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        /* Add hover effect */
+        .navbar-brand:hover {
+            transform: scale(1.05);
+            color: var(--neon-secondary);
+        }
+        
+        .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 500;
+            transition: all 0.3s ease;
+            padding: 8px 16px;
+            border-radius: 4px;
+        }
+
+        .nav-link:hover {
+            color: white !important;
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .nav-link.active {
+            color: white !important;
+            background-color: var(--neon-primary);
         }
 
         .map-container {
@@ -258,9 +287,17 @@
 
 <nav class="navbar">
     <div class="container">
-        <span class="navbar-brand">
-            <i class="bi bi-hexagon-fill"></i> ISOCHRONE EXPLORER
-        </span>
+        <a class="navbar-brand" href="/">
+            <i class="bi bi-map-fill me-2"></i>Isochrone Map
+        </a>
+        <ul class="navbar-nav ms-auto mb-2 mb-lg-0 d-flex flex-row">
+            <li class="nav-item me-3">
+                <a class="nav-link active" href="/">Map</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="/time-deformed">Time Maps</a>
+            </li>
+        </ul>
     </div>
 </nav>
 
