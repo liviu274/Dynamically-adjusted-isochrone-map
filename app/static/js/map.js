@@ -275,8 +275,33 @@ const bounds = [
 ];
 
 
+async function refreshSavedLocations() {
+    try {
+        // Clear existing sidebar items
+        const poiList = document.getElementById('poi-list');
+        poiList.innerHTML = '';
+        
+        // Clear existing markers
+        markers.forEach(marker => map.removeLayer(marker));
+        markers.length = 0;
+        
+        // Fetch and re-add all locations
+        const response = await fetch('/api/pois');
+        const pois = await response.json();
+        
+        pois.forEach(poi => {
+            const marker = createMarker(poi);
+            markers.push(marker);
+            addToSidebar(poi);
+        });
+    } catch (error) {
+        console.error('Error refreshing locations:', error);
+        showToast("Error refreshing locations!");
+    }
+}
 
-// Add validation when adding POIs
+
+// validation when adding POIs
 map.on('click', (e) => {
     const { lat, lng } = e.latlng;
     
@@ -434,7 +459,7 @@ item.innerHTML = `
                 map.setView([lat, lng], 16);
                 marker.openPopup();
                 
-                // Add event listener for the travel time button after the popup is opened
+                // event listener for the travel time button after the popup is opened
                 setTimeout(() => {
                     const travelTimeBtn = document.querySelector('.travel-time-btn');
                     if (travelTimeBtn) {
@@ -476,45 +501,100 @@ item.innerHTML = `
         fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
     });
 
+document.getElementById('poi-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
 
+    const formData = {
+        name: document.getElementById('poi-name').value,
+        latitude: parseFloat(document.getElementById('poi-latitude').value),
+        longitude: parseFloat(document.getElementById('poi-longitude').value),
+        category: document.getElementById('poi-category').value,
+        description: document.getElementById('poi-description').value
+    };
+
+    try {
+        const url = editingItem ? `/api/pois/${editingItem}` : '/api/pois';
+        const method = editingItem ? 'PUT' : 'POST';
+        
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+        });
+
+        if (!response.ok) throw new Error('Network response was not ok');
+        
+        // Refresh locations from server - this will handle both adding new and updating
+        await refreshSavedLocations();
+        
+        // Reset form and UI
+        this.reset();
+        if (selectedMarker) {
+            map.removeLayer(selectedMarker);
+            selectedMarker = null;
+        }
+        if (isochroneCircle) {
+            map.removeLayer(isochroneCircle);
+            isochroneCircle = null;
+        }
+
+        // Reset coordinates and button
+        document.getElementById('poi-latitude').value = '';
+        document.getElementById('poi-longitude').value = '';
+        const submitBtn = document.querySelector('#poi-form button[type="submit"]');
+        submitBtn.innerHTML = '<i class="bi bi-plus-lg me-2"></i>Save Location';
+        
+        // Reset edit mode
+        editingItem = null;
+
+        showToast(editingItem ? "Location updated successfully!" : "Location saved successfully!");
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showToast(editingItem ? "Error updating location!" : "Error saving location!");
+    }
+});
+    
     function clearSelectedMarker() {
         if (selectedMarker && !editingItem) {
             console.log('Clearing temporary marker');
             
-            // Remove the marker
+            // remove the marker
             map.removeLayer(selectedMarker);
             selectedMarker = null;
             
-            // Also remove the circle
+            // remove the circle
             if (isochroneCircle) {
                 console.log('Clearing temporary circle');
                 map.removeLayer(isochroneCircle);
                 isochroneCircle = null;
             }
             
-            // Also clear any window.isochroneCircle (from the second click handler)
+            // clear any window.isochroneCircle (from the second click handler)
             if (window.isochroneCircle) {
                 console.log('Clearing window circle');
                 map.removeLayer(window.isochroneCircle);
                 window.isochroneCircle = null;
             }
             
-            // Also clear isochrones created by right-click
+            // clear isochrones created by right-click
             clearIsochrones();
             
-            // Clear coordinates from form
+            // clear coordinates from form
             document.getElementById('poi-latitude').value = '';
             document.getElementById('poi-longitude').value = '';
         }
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-        // Escape key handler
+        // escape key handler
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
                 console.log('Escape key pressed');
                 clearSelectedMarker();
-                clearJustIsochrones(); // Always try to clear isochrones
+                clearJustIsochrones(); 
             }
         });
     
@@ -529,10 +609,10 @@ item.innerHTML = `
                 !formContainer.contains(event.target) && 
                 !sidebar.contains(event.target)) {
                 
-                clearJustIsochrones(); // Always try to clear isochrones
+                clearJustIsochrones(); // always try to clear isochrones
             }
             
-            // Then handle marker clearing as before
+            // handle marker clearing as before
             if (!selectedMarker || editingItem) return;
             
             if (!mapElement.contains(event.target) && 
@@ -544,11 +624,9 @@ item.innerHTML = `
             }
         });
         
-        // Add a function to safely add event listeners
+        
         function addSafeEventListener(element, event, handler) {
-            // First remove any existing listeners of the same type (optional)
             element.removeEventListener(event, handler);
-            // Then add the new listener
             element.addEventListener(event, handler);
             console.log(`Event listener '${event}' added to:`, element);
         }
@@ -563,9 +641,10 @@ item.innerHTML = `
             
             addSafeEventListener(timeRangeSlider, 'input', sliderHandler);
         }
+
+        initializeSearch();
     });
 
-    // Add after creating isochrone layer:
     const trafficBadge = document.createElement('div');
     trafficBadge.className = 'traffic-indicator';
     trafficBadge.innerHTML = '<i class="bi bi-car-front"></i> Real-time traffic';
@@ -573,22 +652,22 @@ item.innerHTML = `
 
 
 
-// Add this function after your existing bounds declaration
+
 function updateBoundsFromPOIs() {
-    if (markers.length === 0) return; // No POIs to update from
+    if (markers.length === 0) return; // no POIs to update from
     
-    // Get all POI coordinates
+    // all POI coordinates
     const lats = markers.map(marker => marker.getLatLng().lat);
     const lngs = markers.map(marker => marker.getLatLng().lng);
     
-    // Calculate new bounds with padding
-    const padding = 0.02; // Approximately 2km padding
+    // new bounds with padding
+    const padding = 0.02; // aprox 2km padding
     const newBounds = [
         [Math.min(...lats) - padding, Math.min(...lngs) - padding],
         [Math.max(...lats) + padding, Math.max(...lngs) + padding]
     ];
     
-    // Update the bounds constant
+    // update the bounds constant
     bounds[0] = newBounds[0];
     bounds[1] = newBounds[1];
     
@@ -598,11 +677,10 @@ function updateBoundsFromPOIs() {
     showToast("Map boundaries updated based on POIs");
 }
 
-// Add this after your existing bounds declaration
-let currentSelectedBounds = null; // Add this at the top with other global variables
+let currentSelectedBounds = null; 
 
 function viewSelectedPOIs() {
-    // Remove previous selection if it exists
+    // remove previous selection if it exists
     if (currentSelectedBounds) {
         map.removeLayer(currentSelectedBounds);
         currentSelectedBounds = null;
@@ -623,7 +701,7 @@ function viewSelectedPOIs() {
     // Hide the original orange boundary
     // boundaryRectangle.setStyle({ opacity: 0, fillOpacity: 0 });
 
-    // Show only selected markers and collect their coordinates
+    // show only selected markers and collect their coordinates
     const selectedCoords = [];
     checkedBoxes.forEach(checkbox => {
         const lat = parseFloat(checkbox.dataset.lat);
@@ -677,7 +755,6 @@ function viewSelectedPOIs() {
         maxZoom: 20 // Increased max zoom from 17 to 18
     });
 
-    // Add reset button
     let resetButton = document.querySelector('#reset-bounds-button');
     if (!resetButton) {
         resetButton = document.createElement('button');
@@ -700,7 +777,6 @@ function viewSelectedPOIs() {
         document.querySelector('#map').appendChild(resetButton);
     }
 
-    // Add capture button
     let captureButton = document.createElement('button');
     captureButton.className = 'btn btn-info position-absolute m-2';
     captureButton.style.zIndex = '1000';
@@ -718,13 +794,13 @@ function viewSelectedPOIs() {
     document.querySelector('#map').appendChild(captureButton);
 }
 
-// Add this function to handle the view selected POIs button visibility
+// handle the view selected POIs button visibility
 function handleViewSelectedButton() {
     const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
     let viewSelectedButton = document.querySelector('#view-selected-button');
     
     if (checkedBoxes.length > 0) {
-        // Create button if it doesn't exist
+        // create button if it doesn't exist
         if (!viewSelectedButton) {
             viewSelectedButton = document.createElement('button');
             viewSelectedButton.id = 'view-selected-button';
@@ -734,21 +810,21 @@ function handleViewSelectedButton() {
             document.querySelector('.controls').prepend(viewSelectedButton);
         }
     } else {
-        // Remove button if no checkboxes are selected
+        // remove button if no checkboxes are selected
         if (viewSelectedButton) {
             viewSelectedButton.remove();
         }
     }
 }
 
-// Function to capture a screenshot of view selected POIs rectangle
+// capture a screenshot of view selected POIs rectangle
 function captureSelectedArea() {
     if (!currentSelectedBounds) {
         showToast("Please select POIs first");
         return;
     }
     
-    // Create overlay to block map interactions during capture
+    // create overlay to block map interactions during capture
     const mapOverlay = document.createElement('div');
     mapOverlay.style.position = 'absolute';
     mapOverlay.style.top = '0';
@@ -761,14 +837,14 @@ function captureSelectedArea() {
     
     showToast("Preparing map for screenshot...");
     
-    // Collect selected POIs coordinates
+    // collect selected POIs coordinates
     const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
     const selectedPOIs = Array.from(checkedBoxes).map(checkbox => ({
         lat: parseFloat(checkbox.dataset.lat),
         lng: parseFloat(checkbox.dataset.lng)
     }));
     
-    // Get the bounds corners
+    // bounds corners
     const bounds = currentSelectedBounds.getBounds();
     const corners = {
         northEast: {
@@ -899,10 +975,78 @@ function captureSelectedArea() {
                 mapOverlay.parentNode.removeChild(mapOverlay);
             }
         });
-    }, 1000); // Wait 1 second for map rendering to complete
+    }, 1000); // wait 1 second for map rendering to complete
 }
 
 
-// Modify your POI item creation code to add checkbox event listener
-// Find where you create the POI item and add this after the checkbox HTML:
+
 item.querySelector('.poi-checkbox').addEventListener('change', handleViewSelectedButton);
+
+
+// Make items clickable to focus on map
+document.getElementById('poi-list').addEventListener('click', function(e) {
+    const poiItem = e.target.closest('.poi-item');
+    if (poiItem && !e.target.closest('button')) {
+        const marker = markers.find(m => {
+            const itemName = poiItem.querySelector('strong').textContent;
+            const popupContent = m.getPopup().getContent();
+            return popupContent.includes(itemName);
+        });
+
+        if (marker) {
+            map.setView(marker.getLatLng(), 16);
+            marker.openPopup();
+        }
+    }
+});
+
+
+// search bar
+function initializeSearch() {
+    const searchInput = document.getElementById('location-search');
+    if (!searchInput) {
+        console.error('Search input not found');
+        return;
+    }
+
+    searchInput.addEventListener('input', function(e) {
+        const searchTerm = e.target.value.toLowerCase().trim();
+        const poiItems = document.querySelectorAll('#poi-list .poi-item');
+
+        console.log('Searching for:', searchTerm);
+        console.log('Number of POI items:', poiItems.length);
+
+        poiItems.forEach(item => {
+            const nameElement = item.querySelector('strong');
+            const categoryElement = item.querySelector('small');
+
+            if (nameElement && categoryElement) {
+                const name = nameElement.textContent.toLowerCase();
+                const category = categoryElement.textContent.toLowerCase();
+                const isMatch = name.includes(searchTerm) || category.includes(searchTerm);
+
+                item.style.transition = 'all 0.3s ease';
+
+                if (searchTerm === '') {
+                    // show all items when search is empty
+                    item.style.display = '';
+                    item.style.backgroundColor = '';
+                    item.style.transform = 'none';
+                } else {
+                    // show/hide based on match
+                    if (isMatch) {
+                        item.style.display = '';
+                        item.style.backgroundColor = 'rgba(0, 255, 163, 0.1)';
+                        item.style.transform = 'translateX(5px)';
+                    } else {
+                        item.style.display = 'none';
+                        item.style.backgroundColor = '';
+                        item.style.transform = 'none';
+                    }
+                }
+            }
+        });
+    });
+}
+
+
