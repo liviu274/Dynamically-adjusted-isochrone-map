@@ -345,7 +345,7 @@ map.on('click', (e) => {
         const lat = parseFloat(document.getElementById('poi-latitude').value);
         const lng = parseFloat(document.getElementById('poi-longitude').value);
 
-         // Validate coordinates before proceeding
+        
         if (isNaN(lat) || isNaN(lng)) {
             showToast("Please select a valid location on the map first");
             return; // Stop form submission
@@ -353,15 +353,17 @@ map.on('click', (e) => {
 
         const minutes = parseInt(document.getElementById('time-range').value);
 
-        // Create popup content with travel time button
         const popupContent = `
             <div>
                 <strong>${name}</strong><br>
                 <small>${category}</small><br>
                 ${desc}
                 <div class="mt-2">
-                    <button class="btn-travel-time travel-time-btn" data-lat="${lat}" data-lng="${lng}">
-                        <i class="bi bi-clock-fill me-1"></i>Show Travel Times
+                    <button class="btn-travel-time travel-time-btn" 
+                            data-lat="${lat}" 
+                            data-lng="${lng}"
+                            data-time="${minutes}">
+                        <i class="bi bi-clock-fill me-1"></i>Show Travel Times (${minutes} min)
                     </button>
                 </div>
             </div>
@@ -486,12 +488,12 @@ item.innerHTML = `
         showToast("Location saved successfully!");
     });
 
-    // Add the time range listener 
+    // the time range listener 
     document.getElementById('time-range').addEventListener('input', function() {
         document.getElementById('time-val').textContent = this.value;
     });
 
-    // Add context menu for right-click on map
+    // context menu for right-click on map
     map.on('contextmenu', function(e) {
         clearIsochrones();
         // I don't want a second time radious on right-click
@@ -871,7 +873,7 @@ function captureSelectedArea() {
         // Close any open popups (like pressing ESC key)
         map.closePopup();
         
-        // Temporarily hide the green rectangle before capture
+        // temporarily hide the green rectangle before capture
         const originalStyle = currentSelectedBounds.options;
         currentSelectedBounds.setStyle({
             opacity: 0,
@@ -894,7 +896,7 @@ function captureSelectedArea() {
         if (captureButton) captureButton.style.display = 'none';
         if (mapControls) mapControls.style.display = 'none';
         
-        // Use html2canvas to capture the map
+        // capture the map
         html2canvas(document.getElementById('map'), {
             useCORS: true,
             allowTaint: true,
@@ -902,7 +904,7 @@ function captureSelectedArea() {
             scale: window.devicePixelRatio || 2,
             backgroundColor: null
         }).then(function(canvas) {
-            // Get the image data URL
+            // get the image data URL
             const imageData = canvas.toDataURL('image/png');
             
             // Send to server with POI coordinates and bounds
@@ -1004,49 +1006,141 @@ document.getElementById('poi-list').addEventListener('click', function(e) {
 // search bar
 function initializeSearch() {
     const searchInput = document.getElementById('location-search');
-    if (!searchInput) {
-        console.error('Search input not found');
-        return;
-    }
+    const filterBtn = document.getElementById('filterButton');
+    const dropdown = document.getElementById('categoryDropdown');
+    let currentCategory = 'all';
+    let currentTime = 'all';
 
-    searchInput.addEventListener('input', function(e) {
-        const searchTerm = e.target.value.toLowerCase().trim();
-        const poiItems = document.querySelectorAll('#poi-list .poi-item');
+    // Toggle dropdown
+    filterBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        dropdown.classList.toggle('show');
+    });
 
-        console.log('Searching for:', searchTerm);
-        console.log('Number of POI items:', poiItems.length);
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!dropdown.contains(e.target) && !filterBtn.contains(e.target)) {
+            dropdown.classList.remove('show');
+        }
+    });
 
-        poiItems.forEach(item => {
-            const nameElement = item.querySelector('strong');
-            const categoryElement = item.querySelector('small');
-
-            if (nameElement && categoryElement) {
-                const name = nameElement.textContent.toLowerCase();
-                const category = categoryElement.textContent.toLowerCase();
-                const isMatch = name.includes(searchTerm) || category.includes(searchTerm);
-
-                item.style.transition = 'all 0.3s ease';
-
-                if (searchTerm === '') {
-                    // show all items when search is empty
-                    item.style.display = '';
-                    item.style.backgroundColor = '';
-                    item.style.transform = 'none';
-                } else {
-                    // show/hide based on match
-                    if (isMatch) {
-                        item.style.display = '';
-                        item.style.backgroundColor = 'rgba(0, 255, 163, 0.1)';
-                        item.style.transform = 'translateX(5px)';
-                    } else {
-                        item.style.display = 'none';
-                        item.style.backgroundColor = '';
-                        item.style.transform = 'none';
-                    }
-                }
-            }
+    // Category selection
+    document.querySelectorAll('.category-item').forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.stopPropagation();
+            
+            // Update active state
+            document.querySelectorAll('.category-item').forEach(i => 
+                i.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Update current category
+            currentCategory = this.dataset.category;
+            
+            // Trigger search with current filters
+            filterItems(searchInput.value.toLowerCase().trim(), currentCategory, currentTime);
         });
     });
+
+    // Time selection
+    document.querySelectorAll('.time-item').forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.stopPropagation();
+            
+            // Update active state
+            document.querySelectorAll('.time-item').forEach(i => 
+                i.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Update current time filter
+            currentTime = this.dataset.time;
+            
+            // Trigger search with current filters
+            filterItems(searchInput.value.toLowerCase().trim(), currentCategory, currentTime);
+        });
+    });
+
+    // Search input handler
+    searchInput.addEventListener('input', function(e) {
+        filterItems(e.target.value.toLowerCase().trim(), currentCategory, currentTime);
+    });
 }
+
+function filterItems(searchTerm, category, time) {
+    const poiItems = document.querySelectorAll('#poi-list .poi-item');
+
+    poiItems.forEach(item => {
+        const nameElement = item.querySelector('strong');
+        const categoryElement = item.querySelector('small');
+        
+        // Find the corresponding marker for this POI
+        const marker = markers.find(m => {
+            const itemName = nameElement?.textContent;
+            return m.getPopup().getContent().includes(itemName);
+        });
+
+        if (nameElement && categoryElement && marker) {
+            const name = nameElement.textContent.toLowerCase();
+            const itemCategory = categoryElement.textContent.toLowerCase();
+            
+            // Extract the actual travel time from the marker's popup content
+            const popupContent = marker.getPopup().getContent();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(popupContent, 'text/html');
+            const travelTimeBtn = doc.querySelector('.travel-time-btn');
+            
+            // Extract time from the button text which contains "(X min)"
+            const timeMatch = travelTimeBtn.textContent.match(/\((\d+) min\)/);
+            const actualTravelTime = timeMatch ? parseInt(timeMatch[1]) : 0;
+
+            const matchesSearch = name.includes(searchTerm);
+            const matchesCategory = category === 'all' || 
+                                  itemCategory.includes(category.toLowerCase());
+            
+            // Time range matching using actual travel time from the POI
+            let matchesTime = time === 'all';
+            if (!matchesTime && actualTravelTime > 0) {
+                switch(time) {
+                    case '15':
+                        matchesTime = actualTravelTime <= 15;
+                        console.log(`${name}: ${actualTravelTime} <= 15 = ${matchesTime}`);
+                        break;
+                    case '30':
+                        matchesTime = actualTravelTime > 15 && actualTravelTime <= 30;
+                        console.log(`${name}: 15 < ${actualTravelTime} <= 30 = ${matchesTime}`);
+                        break;
+                    case '45':
+                        matchesTime = actualTravelTime > 30 && actualTravelTime <= 45;
+                        console.log(`${name}: 30 < ${actualTravelTime} <= 45 = ${matchesTime}`);
+                        break;
+                    case '60':
+                        matchesTime = actualTravelTime > 45 && actualTravelTime <= 60;
+                        console.log(`${name}: 45 < ${actualTravelTime} <= 60 = ${matchesTime}`);
+                        break;
+                }
+            }
+
+            // Apply filtering and visual effects
+            item.style.transition = 'all 0.3s ease';
+
+            const shouldShow = (searchTerm === '' || matchesSearch) && 
+                             matchesCategory && 
+                             (time === 'all' || matchesTime);
+
+            if (shouldShow) {
+                item.style.display = '';
+                const isFiltered = searchTerm !== '' || category !== 'all' || time !== 'all';
+                item.style.backgroundColor = isFiltered ? 'rgba(0, 255, 163, 0.1)' : '';
+                item.style.transform = isFiltered ? 'translateX(5px)' : 'none';
+            } else {
+                item.style.display = 'none';
+                item.style.backgroundColor = '';
+                item.style.transform = 'none';
+            }
+        }
+    });
+}
+
+
 
 

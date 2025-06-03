@@ -317,9 +317,106 @@
             border-color: var(--neon-primary);
         }
 
+        .search-wrapper {
+            position: relative;
+            display: flex;
+            gap: 8px;
+        }
 
+        .filter-btn {
+            background: rgba(18, 21, 31, 0.8);
+            border: 1px solid rgba(0, 255, 163, 0.2);
+            color: var(--neon-primary);
+            border-radius: 10px;
+            width: 42px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .filter-btn:hover {
+            border-color: var(--neon-primary);
+            box-shadow: 0 0 10px rgba(0, 255, 163, 0.2);
+        }
+
+        .category-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 8px;
+            background: var(--card-bg);
+            border: 1px solid rgba(0, 255, 163, 0.2);
+            border-radius: 10px;
+            padding: 8px;
+            min-width: 200px;
+            z-index: 1000;
+            display: none;
+            box-shadow: var(--glow);
+        }
+
+        .category-dropdown.show {
+            display: block;
+        }
+
+        .category-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            color: var(--text-primary);
+        }
+
+        .category-item:hover {
+            background: rgba(0, 255, 163, 0.1);
+            color: var(--neon-primary);
+        }
+
+        .category-item.active {
+            background: var(--neon-primary);
+            color: var(--dark-bg);
+        }
+
+        .category-dropdown {
+        min-width: 250px;
+        }
+
+        .dropdown-section {
+            padding: 10px;
+            border-bottom: 1px solid rgba(0, 255, 163, 0.1);
+        }
+
+        .dropdown-section:last-child {
+            border-bottom: none;
+        }
+
+        .dropdown-section h6 {
+            color: var(--neon-primary);
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .time-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            color: var(--text-primary);
+        }
+
+        .time-item:hover {
+            background: rgba(0, 255, 163, 0.1);
+            color: var(--neon-primary);
+        }
+
+        .time-item.active {
+            background: var(--neon-primary);
+            color: var(--dark-bg);
+        }
     </style>
 </head>
+
+
 <body>
 
 <nav class="navbar">
@@ -404,10 +501,34 @@
                         <i class="bi bi-search me-2" style="color: var(--neon-primary)"></i>Search Locations
                     </h4>
                     <div class="search-container mb-3">
-                        <input type="text" 
-                            class="form-control" 
-                            id="location-search" 
-                            placeholder="Search by location name...">
+                        <div class="search-wrapper">
+                            <input type="text" 
+                                class="form-control" 
+                                id="location-search" 
+                                placeholder="Search by location name...">
+                            <button class="filter-btn" id="filterButton">
+                                <i class="bi bi-funnel"></i>
+                            </button>
+                            <div class="category-dropdown" id="categoryDropdown">
+                                <div class="dropdown-section">
+                                    <h6>Categories</h6>
+                                    <div class="category-item active" data-category="all">All Categories</div>
+                                    <div class="category-item" data-category="Restaurant">Restaurant</div>
+                                    <div class="category-item" data-category="Park">Park</div>
+                                    <div class="category-item" data-category="Museum">Museum</div>
+                                    <div class="category-item" data-category="School">School</div>
+                                    <div class="category-item" data-category="Shopping">Shopping</div>
+                                </div>
+                                <div class="dropdown-section">
+                                    <h6>Travel Time</h6>
+                                    <div class="time-item active" data-time="all">All Times</div>
+                                    <div class="time-item" data-time="15">Under 15 min</div>
+                                    <div class="time-item" data-time="30">15-30 min</div>
+                                    <div class="time-item" data-time="45">30-45 min</div>
+                                    <div class="time-item" data-time="60">45-60 min</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div id="search-results"></div>
                 </div>
