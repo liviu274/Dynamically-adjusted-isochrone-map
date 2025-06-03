@@ -584,7 +584,7 @@ class MapDeformer:
 def generate_time_deformed_map(screenshot_id, api_key=None):
     """Generate a time-deformed map for a given screenshot ID"""
     try:
-        # CHANGE THIS: Use correct path to 'locals' directory
+        # FIXED: Use locals directory consistently for both input and output
         base_dir = os.path.join(os.path.dirname(__file__), '..', 'locals', 'map_screenshots')
         json_path = os.path.join(base_dir, f"{screenshot_id}.json")
         
@@ -599,23 +599,22 @@ def generate_time_deformed_map(screenshot_id, api_key=None):
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Screenshot image not found: {image_path}")
         
-        # Create static output directory if it doesn't exist
-        static_dir = os.path.join(os.path.dirname(__file__), '..', 'static', 'map_screenshots')
-        os.makedirs(static_dir, exist_ok=True)
-        
-        # Set output to static directory
-        output_path = os.path.join(static_dir, f"{screenshot_id}-timedeformed.png")
+        # FIXED: Output to locals directory (same as input)
+        output_dir = base_dir
+        output_path = os.path.join(output_dir, f"{screenshot_id}-timedeformed.png")
         
         deformer = MapDeformer(api_key)
-        result_path = deformer.create_time_deformed_map(json_path, output_dir=static_dir)
+        result_path = deformer.create_time_deformed_map(json_path, output_dir=output_dir)
         
         # Check if output file was actually created
         if os.path.exists(result_path):
+            print(f"Successfully created time-deformed map at: {result_path}")
             return result_path
         else:
             raise FileNotFoundError(f"Failed to create output file: {result_path}")
     
     except Exception as e:
         print(f"ERROR generating time-deformed map: {str(e)}")
+        import traceback
         traceback.print_exc()
         raise # Re-raise to let caller handle it

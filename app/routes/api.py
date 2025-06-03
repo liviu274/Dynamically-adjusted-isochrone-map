@@ -129,27 +129,15 @@ def deform_map(screenshot_id):
         if not api_key:
             return jsonify({'success': False, 'error': 'No API key configured'}), 500
             
-        # Handle file paths
+        # FIXED: Use locals directory consistently
         locals_dir = os.path.join(current_app.root_path, 'locals', 'map_screenshots')
-        static_dir = os.path.join(current_app.root_path, 'static', 'map_screenshots')
         os.makedirs(locals_dir, exist_ok=True)
-        os.makedirs(static_dir, exist_ok=True)
         
-        # Find JSON and PNG files
+        # Find JSON and PNG files in locals directory
         json_path = os.path.join(locals_dir, f"{screenshot_id}.json")
         png_path = os.path.join(locals_dir, f"{screenshot_id}.png")
         if not os.path.exists(json_path) or not os.path.exists(png_path):
             return jsonify({'success': False, 'error': 'Screenshot files not found'}), 404
-        
-        # Copy files to static directory for web access
-        static_png_path = os.path.join(static_dir, f"{screenshot_id}.png")
-        static_json_path = os.path.join(static_dir, f"{screenshot_id}.json")
-        if not os.path.exists(static_png_path):
-            import shutil
-            shutil.copy2(png_path, static_png_path)
-        if not os.path.exists(static_json_path):
-            import shutil
-            shutil.copy2(json_path, static_json_path)
         
         # Check if the JSON contains POIs
         with open(json_path, 'r') as f:
@@ -160,7 +148,7 @@ def deform_map(screenshot_id):
                 'error': 'Need at least 2 POIs to create a time-deformed map'
             }), 400
 
-        # Generate the time-deformed map
+        # Generate the time-deformed map (output will be in locals directory)
         try:
             # First try with API
             output_path = generate_time_deformed_map(screenshot_id, api_key)
@@ -171,7 +159,7 @@ def deform_map(screenshot_id):
             # Use the fallback method explicitly
             from app.services.map_deformer import MapDeformer
             deformer = MapDeformer(None)  # No API key needed for fallback
-            output_path = deformer.create_time_deformed_map(json_path, output_dir=static_dir)
+            output_path = deformer.create_time_deformed_map(json_path, output_dir=locals_dir)
         
         # Get the filename to return to client
         filename = os.path.basename(output_path)
@@ -179,7 +167,7 @@ def deform_map(screenshot_id):
         return jsonify({
             'success': True,
             'filename': filename,
-            'url': f"/static/map_screenshots/{filename}"
+            'url': f"/api/map-image/{filename}"  # Use the map-image endpoint
         })
         
     except Exception as e:
