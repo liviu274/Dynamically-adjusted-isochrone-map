@@ -300,6 +300,60 @@ async function refreshSavedLocations() {
     }
 }
 
+// Update the createMarker function to add the marker to the map
+function createMarker(location) {
+    // Get travel time (default to 10 if not provided)
+    const minutes = location.travel_time || 10;
+    
+    // Create popup content with travel time button
+    const popupContent = `
+        <div>
+            <strong>${location.name}</strong><br>
+            <small>${location.category}</small><br>
+            ${location.description || ''}
+            <div class="mt-2">
+                <button class="btn-travel-time travel-time-btn" 
+                        data-lat="${location.latitude}" 
+                        data-lng="${location.longitude}"
+                        data-time="${minutes}">
+                    <i class="bi bi-clock-fill me-1"></i>Show Travel Times (${minutes} min)
+                </button>
+            </div>
+        </div>
+    `;
+    
+    // Create the marker
+    const marker = L.marker([location.latitude, location.longitude], {
+        title: location.name
+    }).addTo(map);
+    
+    // Add the popup with the enhanced content
+    marker.bindPopup(popupContent);
+    
+    // Add event listener to the popup for when it opens
+    marker.on('popupopen', function() {
+        setTimeout(() => {
+            const travelTimeBtn = document.querySelector('.travel-time-btn');
+            if (travelTimeBtn) {
+                travelTimeBtn.addEventListener('click', function() {
+                    const btnLat = parseFloat(this.getAttribute('data-lat'));
+                    const btnLng = parseFloat(this.getAttribute('data-lng'));
+                    const minutes = parseInt(this.getAttribute('data-time'), 10);
+                    
+                    console.log('Travel time button clicked:');
+                    console.log('Button lat/lng:', btnLat, btnLng);
+                    console.log('Minutes value:', minutes);
+                    
+                    fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
+                });
+            } else {
+                console.error('Travel time button not found in popup');
+            }
+        }, 100);
+    });
+    
+    return marker;
+}
 
 // validation when adding POIs
 map.on('click', (e) => {
@@ -511,7 +565,9 @@ document.getElementById('poi-form').addEventListener('submit', async function (e
         latitude: parseFloat(document.getElementById('poi-latitude').value),
         longitude: parseFloat(document.getElementById('poi-longitude').value),
         category: document.getElementById('poi-category').value,
-        description: document.getElementById('poi-description').value
+        description: document.getElementById('poi-description').value,
+        // Add travel time from the slider
+        travel_time: parseInt(document.getElementById('time-range').value)
     };
 
     try {
@@ -982,9 +1038,6 @@ function captureSelectedArea() {
 
 
 
-item.querySelector('.poi-checkbox').addEventListener('change', handleViewSelectedButton);
-
-
 // Make items clickable to focus on map
 document.getElementById('poi-list').addEventListener('click', function(e) {
     const poiItem = e.target.closest('.poi-item');
@@ -1139,6 +1192,96 @@ function filterItems(searchTerm, category, time) {
             }
         }
     });
+}
+
+// Add this function before refreshSavedLocations
+function addToSidebar(poi) {
+    const item = document.createElement('div');
+    item.className = 'poi-item';
+    item.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start">
+            <div class="d-flex align-items-center">
+                <input type="checkbox" class="poi-checkbox me-2" data-lat="${poi.latitude}" data-lng="${poi.longitude}">
+                <div>
+                    <strong>${poi.name}</strong><br>
+                    <small><i class="bi bi-tag-fill me-1"></i>${poi.category}</small>
+                </div>
+            </div>
+            <div>
+                <button class="btn btn-sm btn-outline-light btn-edit" data-id="${poi.id}"><i class="bi bi-pencil-fill"></i></button>
+                <button class="btn btn-sm btn-outline-danger btn-delete" data-id="${poi.id}"><i class="bi bi-trash-fill"></i></button>
+            </div>
+        </div>
+    `;
+
+    // Add event listeners to the new item
+    const checkbox = item.querySelector('.poi-checkbox');
+    checkbox.addEventListener('change', handleViewSelectedButton);
+
+    // Delete button
+    item.querySelector('.btn-delete').addEventListener('click', async () => {
+        try {
+            const response = await fetch(`/api/pois/${poi.id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                // Remove from UI
+                item.remove();
+                
+                // Remove marker from map
+                const marker = markers.find(m => m.getLatLng().lat === poi.latitude && m.getLatLng().lng === poi.longitude);
+                if (marker) map.removeLayer(marker);
+                
+                showToast("Location deleted");
+            } else {
+                showToast("Failed to delete location");
+            }
+        } catch (error) {
+            console.error('Error deleting location:', error);
+            showToast("Error deleting location");
+        }
+    });
+
+    // Edit button
+    item.querySelector('.btn-edit').addEventListener('click', () => {
+        document.getElementById('poi-name').value = poi.name;
+        document.getElementById('poi-category').value = poi.category || 'Restaurant';
+        document.getElementById('poi-description').value = poi.description || '';
+        document.getElementById('poi-latitude').value = poi.latitude;
+        document.getElementById('poi-longitude').value = poi.longitude;
+
+        // Mark as editing
+        editingItem = poi.id;
+
+        // Show on map
+        const editMarker = L.marker([poi.latitude, poi.longitude]).addTo(map)
+            .bindPopup("Editing location").openPopup();
+            
+        if (selectedMarker) map.removeLayer(selectedMarker);
+        selectedMarker = editMarker;
+        
+        // Update submit button to indicate editing
+        const submitBtn = document.querySelector('#poi-form button[type="submit"]');
+        submitBtn.innerHTML = '<i class="bi bi-check-lg me-2"></i>Update Location';
+    });
+
+    // Click to view on map
+    item.addEventListener('click', (e) => {
+        if (!e.target.closest('button') && !e.target.closest('input')) {
+            map.setView([poi.latitude, poi.longitude], 16);
+            
+            // Find the marker for this POI
+            const marker = markers.find(m => 
+                m.getLatLng().lat === poi.latitude && 
+                m.getLatLng().lng === poi.longitude
+            );
+            
+            if (marker) marker.openPopup();
+        }
+    });
+
+    document.getElementById('poi-list').appendChild(item);
 }
 
 

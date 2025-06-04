@@ -24,11 +24,12 @@ def create_poi():
         latitude=data['latitude'],
         longitude=data['longitude'],
         category=data.get('category'),
-        description=data.get('description')
+        description=data.get('description'),
+        travel_time=data.get('travel_time', 10)  # Default to 10 if not provided
     )
     db.session.add(new_poi)
     db.session.commit()
-    return jsonify(new_poi.to_dict()), 201
+    return jsonify(new_poi.to_dict()), 201  # Return the created POI with 201 Created status
 
 @api_bp.route('/pois/<int:poi_id>', methods=['GET'])
 def get_poi(poi_id):
@@ -45,6 +46,7 @@ def update_poi(poi_id):
     poi.longitude = data.get('longitude', poi.longitude)
     poi.category = data.get('category', poi.category)
     poi.description = data.get('description', poi.description)
+    poi.travel_time = data.get('travel_time', poi.travel_time)  # Update travel time
     
     db.session.commit()
     return jsonify(poi.to_dict())
