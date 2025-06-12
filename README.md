@@ -31,24 +31,28 @@ This application helps users understand travel time patterns by visualizing isoc
 ## 📱 Implementation Phases
 
 ### 1. Foundation
+
 - Built core application structure with Flask backend and Leaflet map integration
 - Implemented basic POI creation, editing and deletion functionality
 - Set up database models for data persistence
 - Created responsive UI with dark mode support
 
 ### 2. Isochrone Visualization
+
 - Integrated with OpenRouteService API for isochrone generation
 - Implemented color-coded travel time zones on the map
 - Added controls for adjusting travel time parameters
 - Developed error handling for API limits and connection issues
 
 ### 3. Enhanced User Experience
+
 - Added location search functionality
 - Implemented category filtering system
 - Created interactive sidebars for saved locations
 - Developed toast notification system for user feedback
 
 ### 4. Advanced Features
+
 - Time-deformed map generation showing travel time distortion
 - Historical data comparison for analyzing travel time changes
 - Optimization for mobile devices
@@ -57,30 +61,35 @@ This application helps users understand travel time patterns by visualizing isoc
 ## 🔧 Project Architecture
 
 ### Project Configuration
+
 - **Project Initialization** – Creating the basic structure and setting up the development environment
 - **Loading and Displaying the Map** – Integrating and displaying an interactive map
 - **Managing Points of Interest** – Adding, editing, and deleting locations on the map
 - **Data Persistence** – Storing points of interest and routes in a database
 
 ### Data Handling
+
 - **Collecting Travel Times** – Retrieving data on the time required between locations
 - **Preprocessing and Normalizing Travel Times** – Transforming raw data into a usable format
 - **Automatic Time Updates** – Implementing a periodic update mechanism
 - **Error Handling and Fallback** – Managing cases where data is missing or inaccessible
 
 ### Data Visualization on the Map
+
 - **Dynamic Map Coloring** – Changing the appearance based on travel times
 - **Adding a Visual Scale** – A legend explaining time differences
 - **Displaying Information on Hover/Click** – Showing location details and travel times upon interaction
 - **Implementing a Filtering System** – Allowing users to view only specific types of locations
 
 ### Interactive Features
+
 - **Location Search** – A search system for points of interest
 - **Fastest Route Calculation** – An algorithm to determine the optimal path between two points
 - **Dynamic Route Updates** – Adjusting routes based on traffic conditions
 - **Historical View Mode** – Comparing current travel times with past data
 
 ### Optimization and Testing
+
 - **Reducing Map Loading Time** – Optimizing API requests
 - **Improving Interaction Performance** – Ensuring a smooth and responsive UI
 - **Unit Testing** – Verifying individual functionalities separately
@@ -97,22 +106,27 @@ We would like to acknowledge the support provided by Clause Sonnet 3.7 prompt en
 ### Bug Fixing Examples
 
 1. **Authentication Token Expiration Bug**:  
-  When users experienced sudden disconnections, Clause Sonnet 3.7 helped identify that the JWT refresh mechanism was failing silently. It guided us in implementing a proper token refresh pattern with appropriate error handling.
+   When users experienced sudden disconnections, Clause Sonnet 3.7 helped identify that the JWT refresh mechanism was failing silently. It guided us in implementing a proper token refresh pattern with appropriate error handling.
 
 2. **Isochrone Rendering Glitch**:  
-  We encountered inconsistent polygon rendering for isochrones that crossed the 180° meridian. Through prompt engineering, we were able to understand the geodata normalization issue and implement the correct polygon splitting technique.
+   We encountered inconsistent polygon rendering for isochrones that crossed the 180° meridian. Through prompt engineering, we were able to understand the geodata normalization issue and implement the correct polygon splitting technique.
 
 3. **Database Connection Pool Saturation**:  
-  Users reported random 500 errors during peak usage. Clause Sonnet 3.7 helped diagnose the connection pooling configuration issues and guided us in implementing a more efficient connection management strategy with proper timeout handling.
+   Users reported random 500 errors during peak usage. Clause Sonnet 3.7 helped diagnose the connection pooling configuration issues and guided us in implementing a more efficient connection management strategy with proper timeout handling.
+
+### Known Bugs / Documentation Backlog
+
+- **Important reminders**:  
+  In practice, it was mostly used for important reminders, sush as files that should not be pushed to remote or
+  api credentials updating for every local instance
 
 ### Load-Order Refactoring
 
 1. **JavaScript Dependency Circular Reference**:  
-  Our map initialization was failing intermittently due to complex module interdependencies. Prompt engineering helped us visualize the dependency graph and restructure our code with a proper initialization sequence pattern.
+   Our map initialization was failing intermittently due to complex module interdependencies. Prompt engineering helped us visualize the dependency graph and restructure our code with a proper initialization sequence pattern.
 
 2. **API Service Initialization Sequence**:  
-  The application sometimes failed to properly initialize the geolocation services. Clause Sonnet 3.7 guided us in implementing a promise-based service initialization chain that ensured proper loading order regardless of network response timing.
-
+   The application sometimes failed to properly initialize the geolocation services. Clause Sonnet 3.7 guided us in implementing a promise-based service initialization chain that ensured proper loading order regardless of network response timing.
 
 ## 📄 License
 
