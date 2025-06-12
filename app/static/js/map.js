@@ -1,6 +1,5 @@
-// Rate limit error function - must be defined before fetchAndDisplayIsochrones
+// Display error message when API rate limit is exceeded
 function showRateLimitError(errorMessage = '') {
-    // Log to console for debugging
     console.error(`API Rate limit exceeded: ${errorMessage}`);
     
     const errorElement = document.getElementById('rate-limit-error');
@@ -10,15 +9,14 @@ function showRateLimitError(errorMessage = '') {
         return;
     }
     
-    // Create countdown timer element
+    // Initialize countdown timer
     let secondsLeft = 60;
     
-    // Update error message with countdown and actual error if available
+    // Update error message content
     const messageSpan = errorElement.querySelector('.alert-content span');
     if (messageSpan) {
         let message = `API rate limit exceeded. Please wait <span class="countdown-timer">${secondsLeft}</span> seconds before making more requests.`;
         
-        // Add API-specific message if available
         if (errorMessage && errorMessage.length > 0) {
             message += `<br><small class="text-muted">${errorMessage}</small>`;
         }
@@ -26,19 +24,19 @@ function showRateLimitError(errorMessage = '') {
         messageSpan.innerHTML = message;
     }
     
-    // Apply fade-in animation
+    // Show error with fade-in animation
     errorElement.style.opacity = '0';
     errorElement.classList.remove('d-none');
     void errorElement.offsetWidth;
     errorElement.style.transition = 'opacity 0.5s ease-in-out';
     errorElement.style.opacity = '1';
     
-    // Clear existing interval if there is one
+    // Clear existing interval if present
     if (errorElement.dataset.intervalId) {
         clearInterval(parseInt(errorElement.dataset.intervalId));
     }
     
-    // Start countdown
+    // Start countdown timer
     const countdownInterval = setInterval(() => {
         secondsLeft--;
         const countdownElement = errorElement.querySelector('.countdown-timer');
@@ -56,7 +54,7 @@ function showRateLimitError(errorMessage = '') {
     
     errorElement.dataset.intervalId = countdownInterval;
     
-    // Add event listener to dismiss button
+    // Setup dismiss button handler
     const dismissBtn = errorElement.querySelector('#dismiss-rate-limit');
     if (dismissBtn) {
         dismissBtn.addEventListener('click', function() {
@@ -72,34 +70,37 @@ function showRateLimitError(errorMessage = '') {
     }
 }
 
+// Initialize map centered on Timișoara
 const map = L.map('map').setView([45.76, 21.23], 13);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
-    // Complete replacement of the default icon settings
+    // Configure custom marker icon
     L.Icon.Default.mergeOptions({
         iconUrl: '/static/images/pin.png',
-        iconRetinaUrl: '/static/images/pin.png',  // Same image for retina displays
-        iconSize: [32, 32],  // Adjust size to match your pin image dimensions
-        iconAnchor: [16, 32], // Bottom center of the icon
-        popupAnchor: [0, -32], // Popup appears above the icon
+        iconRetinaUrl: '/static/images/pin.png',  
+        iconSize: [32, 32],  
+        iconAnchor: [16, 32],
+        popupAnchor: [0, -32], 
         shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
         shadowSize: [41, 41],
         shadowAnchor: [12, 41]
     });
 
-    // Force Leaflet to reload the icon defaults
+    // Reset Leaflet icon defaults
     delete L.Icon.Default.prototype._getIconUrl;
     L.Icon.Default.imagePath = '';
     L.Icon.Default._getIconUrl = L.Icon.Default.prototype._getIconUrl;
 
+    // Global state variables
     let isochroneCircle = null;
     let selectedMarker = null;
-    let markers = []; // Array to track all POI markers
+    let markers = []; 
     let editingItem = null;
     let isochronesShowing = false;
 
+    // Display toast notification
     const showToast = (msg) => {
         const container = document.getElementById("toast-container");
         const toast = document.createElement("div");
@@ -109,19 +110,16 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         setTimeout(() => toast.remove(), 3000);
     };
 
-    // Function to fetch and display isochrones
+    // Fetch and render isochrones on the map
     const fetchAndDisplayIsochrones = (lat, lng, customTimeMinutes = null) => {
-        // Show loading indicator
         showToast("Loading isochrones...");
         
-        // Initialize time ranges based on context
-        let timeRanges = [5]; // Default for right-click: just one 5-min isochrone (changed from 10)
+        // Configure time parameters
+        let timeRanges = [5]; // Default: 5-minute isochrone
         let isCustomRequest = false;
         
         if (customTimeMinutes) {
-            // This is a request from "Show Travel Times" button
             const requestedTime = parseInt(customTimeMinutes);
-            // Show two isochrones - half the time and full time
             timeRanges = [Math.ceil(requestedTime/2), requestedTime];
             isCustomRequest = true;
         }
@@ -138,7 +136,6 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                 if (!response.ok) {
                     console.error(`API error: ${response.status} - ${response.statusText}`);
                     
-                    // Directly check for any rate limiting or quota errors - more comprehensive
                     if (response.status === 429 || response.status === 403) {
                         showRateLimitError();
                         throw new Error(`Rate limit exceeded (${response.status})`);
@@ -148,7 +145,7 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                 return response.json();
             })
             .then(data => {
-                // Check if the response contains an error message about rate limiting
+                // Check for rate limit errors in response
                 if (data.status === 'error' && data.message && 
                     (data.message.toLowerCase().includes('rate') || 
                      data.message.toLowerCase().includes('limit') || 
@@ -160,31 +157,24 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                 clearIsochrones();
                 
                 if (data.features) {
-                    // For custom requests (Show Travel Times button), process features in reverse order
-                    // so that smaller isochrone appears on top
                     let processFeatures = [...data.features];
                     
                     if (isCustomRequest && processFeatures.length > 1) {
-                        // Process in reverse order (outer first, inner last)
+                        // Reverse order for custom requests
                         processFeatures.reverse();
                     }
                     
-                    // Process each isochrone feature
+                    // Create layers for each isochrone
                     processFeatures.forEach((feature, index) => {
-                        // Customize colors based on context
                         let color;
                         
                         if (isCustomRequest) {
-                            // For "Show Travel Times": Purple for inner, Red for outer
-                            // Since we reversed the array, we need to flip the index check
                             const originalIndex = isCustomRequest ? (processFeatures.length - 1 - index) : index;
-                            color = originalIndex === 0 ? "#8a2be2" : "#ff0000"; // Purple for first, Red for second
+                            color = originalIndex === 0 ? "#8a2be2" : "#ff0000";
                         } else {
-                            // For right-click: Just one purple isochrone
-                            color = "#8a2be2"; // Purple
+                            color = "#8a2be2";
                         }
                         
-                        // Get time in minutes for tooltip
                         const minutes = feature.properties.value / 60;
                         
                         const layer = L.geoJSON(feature, {
@@ -204,7 +194,7 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                         })
                         .addTo(map);
                         
-                        // Add mouseover/mouseout events for better UX
+                        // Add hover effects
                         layer.on('mouseover', function(e) {
                             this.setStyle({
                                 fillOpacity: 0.4,
@@ -224,7 +214,7 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                         isochroneLayers.push(layer);
                     });
                     
-                    // Make sure the inner isochrone is displayed on top
+                    // Ensure inner isochrone appears on top
                     if (isCustomRequest && isochroneLayers.length > 1) {
                         isochroneLayers[isochroneLayers.length - 1].bringToFront();
                     }
@@ -238,7 +228,7 @@ const map = L.map('map').setView([45.76, 21.23], 13);
             .catch(error => {
                 console.error('Error fetching isochrones:', error);
                 
-                // Expanded error message detection - make this more comprehensive
+                // Detect rate limit errors in error message
                 const errorMsg = error.message ? error.message.toLowerCase() : '';
                 if (errorMsg.includes('rate') || 
                     errorMsg.includes('limit') || 
@@ -246,21 +236,22 @@ const map = L.map('map').setView([45.76, 21.23], 13);
                     errorMsg.includes('quota') ||
                     errorMsg.includes('exceeded')) {
                     console.log('Rate limit error detected - showing error message');
-                    showRateLimitError(); // Always call this for any rate-related error
+                    showRateLimitError();
                 } else {
                     showToast('Failed to load isochrones. Please try again.');
                 }
             });
     };
     
-    // Clear isochrones
+    // Storage and removal of isochrone layers
     const isochroneLayers = [];
     const clearIsochrones = () => {
         isochroneLayers.forEach(layer => map.removeLayer(layer));
         isochroneLayers.length = 0;
-        isochronesShowing = false; // Reset flag when cleared
+        isochronesShowing = false;
     };
 
+    // Clear isochrones only if they exist
     function clearJustIsochrones() {
         if (isochronesShowing) {
             console.log('Clearing only isochrones');
@@ -268,24 +259,24 @@ const map = L.map('map').setView([45.76, 21.23], 13);
         }
     }
 
-    // Add this after the map initialization code
-const bounds = [
-    [45.70, 21.15], // Southwest corner
-    [45.82, 21.31]  // Northeast corner
-];
+    // Map boundaries for Timișoara
+    const bounds = [
+        [45.70, 21.15], // Southwest corner
+        [45.82, 21.31]  // Northeast corner
+    ];
 
 
+// Refresh all saved locations from the server
 async function refreshSavedLocations() {
     try {
-        // Clear existing sidebar items
+        // Clear existing UI elements
         const poiList = document.getElementById('poi-list');
         poiList.innerHTML = '';
         
-        // Clear existing markers
         markers.forEach(marker => map.removeLayer(marker));
         markers.length = 0;
         
-        // Fetch and re-add all locations
+        // Fetch and display locations
         const response = await fetch('/api/pois');
         const pois = await response.json();
         
@@ -300,12 +291,11 @@ async function refreshSavedLocations() {
     }
 }
 
-// Update the createMarker function to add the marker to the map
+// Create map marker from location data
 function createMarker(location) {
-    // Get travel time (default to 10 if not provided)
     const minutes = location.travel_time || 10;
     
-    // Create popup content with travel time button
+    // Create marker popup content
     const popupContent = `
         <div>
             <strong>${location.name}</strong><br>
@@ -322,15 +312,13 @@ function createMarker(location) {
         </div>
     `;
     
-    // Create the marker
     const marker = L.marker([location.latitude, location.longitude], {
         title: location.name
     }).addTo(map);
     
-    // Add the popup with the enhanced content
     marker.bindPopup(popupContent);
     
-    // Add event listener to the popup for when it opens
+    // Setup event handlers for popup
     marker.on('popupopen', function() {
         setTimeout(() => {
             const travelTimeBtn = document.querySelector('.travel-time-btn');
@@ -355,11 +343,11 @@ function createMarker(location) {
     return marker;
 }
 
-// validation when adding POIs
+// Handle map clicks for POI placement
 map.on('click', (e) => {
     const { lat, lng } = e.latlng;
     
-    // Check if click is within bounds
+    // Validate click location against boundaries
     if (lat < bounds[0][0] || lat > bounds[1][0] || 
         lng < bounds[0][1] || lng > bounds[1][1]) {
         showToast("Please select a location within Timișoara city limits");
@@ -386,6 +374,7 @@ map.on('click', (e) => {
         selectedMarker = L.marker([lat, lng]).addTo(map).bindPopup("Selected location").openPopup();
     });
 
+    // Update time range display when slider changes
     document.getElementById('time-range').addEventListener('input', function () {
         document.getElementById('time-val').textContent = this.value;
     });
@@ -426,7 +415,7 @@ map.on('click', (e) => {
         const marker = L.marker([lat, lng]).addTo(map)
             .bindPopup(popupContent);
             
-        // Add event listener to the popup content after it's opened
+        // Setup travel time button in popup
         marker.on('popupopen', function() {
             setTimeout(() => {
                 const travelTimeBtn = document.querySelector('.travel-time-btn');
@@ -435,7 +424,6 @@ map.on('click', (e) => {
                         const btnLat = parseFloat(this.getAttribute('data-lat'));
                         const btnLng = parseFloat(this.getAttribute('data-lng'));
                         
-                        // Get a fresh value from the slider each time
                         const timeSlider = document.getElementById('time-range');
                         const minutes = parseInt(document.getElementById('time-val').textContent, 10);
                         
@@ -443,7 +431,6 @@ map.on('click', (e) => {
                         console.log('Button lat/lng:', btnLat, btnLng);
                         console.log('Current slider value:', minutes);
                         
-                        // Force refresh of the UI before proceeding
                         document.getElementById('time-val').textContent = minutes;
                         
                         fetchAndDisplayIsochrones(btnLat, btnLng, minutes);
@@ -498,8 +485,6 @@ item.innerHTML = `
             document.getElementById('poi-description').value = desc;
             document.getElementById('poi-latitude').value = lat;
             document.getElementById('poi-longitude').value = lng;
-            // Remove or fix the following line which is incorrect
-            // document.getElementById('poi-longitude').value = timeMinutes;
 
             if (isochroneCircle) map.removeLayer(isochroneCircle);
             if (selectedMarker) map.removeLayer(selectedMarker);
@@ -515,7 +500,7 @@ item.innerHTML = `
                 map.setView([lat, lng], 16);
                 marker.openPopup();
                 
-                // event listener for the travel time button after the popup is opened
+                // Setup travel time button
                 setTimeout(() => {
                     const travelTimeBtn = document.querySelector('.travel-time-btn');
                     if (travelTimeBtn) {
@@ -542,21 +527,21 @@ item.innerHTML = `
         showToast("Location saved successfully!");
     });
 
-    // the time range listener 
+    // Update time range display when slider changes
     document.getElementById('time-range').addEventListener('input', function() {
         document.getElementById('time-val').textContent = this.value;
     });
 
-    // context menu for right-click on map
+    // Handle right-click on map to show isochrones
     map.on('contextmenu', function(e) {
         clearIsochrones();
-        // I don't want a second time radious on right-click
 
         console.log('Right-click context menu:');
         console.log('Coordinates:', e.latlng.lat, e.latlng.lng);
         fetchAndDisplayIsochrones(e.latlng.lat, e.latlng.lng);
     });
 
+// Handle POI form submission
 document.getElementById('poi-form').addEventListener('submit', async function (e) {
     e.preventDefault();
 
@@ -566,7 +551,6 @@ document.getElementById('poi-form').addEventListener('submit', async function (e
         longitude: parseFloat(document.getElementById('poi-longitude').value),
         category: document.getElementById('poi-category').value,
         description: document.getElementById('poi-description').value,
-        // Add travel time from the slider
         travel_time: parseInt(document.getElementById('time-range').value)
     };
 
@@ -584,10 +568,10 @@ document.getElementById('poi-form').addEventListener('submit', async function (e
 
         if (!response.ok) throw new Error('Network response was not ok');
         
-        // Refresh locations from server - this will handle both adding new and updating
+        // Refresh data from server
         await refreshSavedLocations();
         
-        // Reset form and UI
+        // Reset UI state
         this.reset();
         if (selectedMarker) {
             map.removeLayer(selectedMarker);
@@ -598,13 +582,12 @@ document.getElementById('poi-form').addEventListener('submit', async function (e
             isochroneCircle = null;
         }
 
-        // Reset coordinates and button
+        // Reset form fields
         document.getElementById('poi-latitude').value = '';
         document.getElementById('poi-longitude').value = '';
         const submitBtn = document.querySelector('#poi-form button[type="submit"]');
         submitBtn.innerHTML = '<i class="bi bi-plus-lg me-2"></i>Save Location';
         
-        // Reset edit mode
         editingItem = null;
 
         showToast(editingItem ? "Location updated successfully!" : "Location saved successfully!");
@@ -615,39 +598,35 @@ document.getElementById('poi-form').addEventListener('submit', async function (e
     }
 });
     
+    // Remove selected marker and related elements
     function clearSelectedMarker() {
         if (selectedMarker && !editingItem) {
             console.log('Clearing temporary marker');
             
-            // remove the marker
             map.removeLayer(selectedMarker);
             selectedMarker = null;
             
-            // remove the circle
             if (isochroneCircle) {
                 console.log('Clearing temporary circle');
                 map.removeLayer(isochroneCircle);
                 isochroneCircle = null;
             }
             
-            // clear any window.isochroneCircle (from the second click handler)
             if (window.isochroneCircle) {
                 console.log('Clearing window circle');
                 map.removeLayer(window.isochroneCircle);
                 window.isochroneCircle = null;
             }
             
-            // clear isochrones created by right-click
             clearIsochrones();
             
-            // clear coordinates from form
             document.getElementById('poi-latitude').value = '';
             document.getElementById('poi-longitude').value = '';
         }
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-        // escape key handler
+        // Handle Escape key press
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
                 console.log('Escape key pressed');
@@ -656,21 +635,21 @@ document.getElementById('poi-form').addEventListener('submit', async function (e
             }
         });
     
-        // Click outside handler - use mousedown for better detection
+        // Handle clicks outside the map area
         document.addEventListener('mousedown', function(event) {
-            // First check if we need to clear isochrones (regardless of marker)
             const mapElement = document.getElementById('map');
             const formContainer = document.querySelector('.controls');
             const sidebar = document.querySelector('.sidebar');
             
+            // Clear isochrones when clicking outside map and controls
             if (!mapElement.contains(event.target) && 
                 !formContainer.contains(event.target) && 
                 !sidebar.contains(event.target)) {
                 
-                clearJustIsochrones(); // always try to clear isochrones
+                clearJustIsochrones();
             }
             
-            // handle marker clearing as before
+            // Skip if no marker selected or if editing
             if (!selectedMarker || editingItem) return;
             
             if (!mapElement.contains(event.target) && 
@@ -683,6 +662,7 @@ document.getElementById('poi-form').addEventListener('submit', async function (e
         });
         
         
+        // Add event listener with cleanup
         function addSafeEventListener(element, event, handler) {
             element.removeEventListener(event, handler);
             element.addEventListener(event, handler);
@@ -703,6 +683,7 @@ document.getElementById('poi-form').addEventListener('submit', async function (e
         initializeSearch();
     });
 
+    // Add traffic indicator badge
     const trafficBadge = document.createElement('div');
     trafficBadge.className = 'traffic-indicator';
     trafficBadge.innerHTML = '<i class="bi bi-car-front"></i> Real-time traffic';
@@ -711,34 +692,30 @@ document.getElementById('poi-form').addEventListener('submit', async function (e
 
 
 
+// Update map boundaries based on POI locations
 function updateBoundsFromPOIs() {
-    if (markers.length === 0) return; // no POIs to update from
+    if (markers.length === 0) return;
     
-    // all POI coordinates
+    // Calculate new bounds from marker positions
     const lats = markers.map(marker => marker.getLatLng().lat);
     const lngs = markers.map(marker => marker.getLatLng().lng);
     
-    // new bounds with padding
-    const padding = 0.02; // aprox 2km padding
+    const padding = 0.02; // ~2km padding
     const newBounds = [
         [Math.min(...lats) - padding, Math.min(...lngs) - padding],
         [Math.max(...lats) + padding, Math.max(...lngs) + padding]
     ];
     
-    // update the bounds constant
     bounds[0] = newBounds[0];
     bounds[1] = newBounds[1];
-    
-    // Fit map to new bounds
-    // map.fitBounds(boundaryRectangle.getBounds());
     
     showToast("Map boundaries updated based on POIs");
 }
 
 let currentSelectedBounds = null; 
 
+// View selected POIs with adjusted map bounds
 function viewSelectedPOIs() {
-    // remove previous selection if it exists
     if (currentSelectedBounds) {
         map.removeLayer(currentSelectedBounds);
         currentSelectedBounds = null;
@@ -751,22 +728,18 @@ function viewSelectedPOIs() {
         return;
     }
 
-    // Hide all markers first
+    // Dim all markers
     markers.forEach(marker => {
         marker.setOpacity(0.2);
     });
 
-    // Hide the original orange boundary
-    // boundaryRectangle.setStyle({ opacity: 0, fillOpacity: 0 });
-
-    // show only selected markers and collect their coordinates
+    // Collect and highlight selected POIs
     const selectedCoords = [];
     checkedBoxes.forEach(checkbox => {
         const lat = parseFloat(checkbox.dataset.lat);
         const lng = parseFloat(checkbox.dataset.lng);
         selectedCoords.push({ lat, lng });
         
-        // Find and highlight the corresponding marker
         const marker = markers.find(m => {
             const pos = m.getLatLng();
             return pos.lat === lat && pos.lng === lng;
@@ -776,28 +749,25 @@ function viewSelectedPOIs() {
         }
     });
 
-    // Calculate the center point
+    // Calculate view center and bounds
     const lats = selectedCoords.map(coord => coord.lat);
     const lngs = selectedCoords.map(coord => coord.lng);
     const centerLat = (Math.max(...lats) + Math.min(...lats)) / 2;
     const centerLng = (Math.max(...lngs) + Math.min(...lngs)) / 2;
 
-    // Calculate the spread of selected POIs
     const latSpread = Math.max(...lats) - Math.min(...lats);
     const lngSpread = Math.max(...lngs) - Math.min(...lngs);
 
-    // Reduce padding for tighter zoom (changed from 0.5 to 0.2)
     const padding = 0.2;
     const adjustedLatSpread = latSpread * (1 + padding);
     const adjustedLngSpread = lngSpread * (1 + padding);
 
-    // Create new bounds based on the POI spread
     const newBounds = [
         [centerLat - adjustedLatSpread/2, centerLng - adjustedLngSpread/2],
         [centerLat + adjustedLatSpread/2, centerLng + adjustedLngSpread/2]
     ];
 
-    // Create and add the green boundary
+    // Create highlighted area rectangle
     currentSelectedBounds = L.rectangle(newBounds, {
         color: "#4CAF50",
         weight: 3,
@@ -805,14 +775,15 @@ function viewSelectedPOIs() {
         dashArray: '10, 15'
     }).addTo(map);
 
-    // Fit map to the new bounds with tighter zoom
+    // Adjust map view
     map.flyToBounds(newBounds, {
-        margin: [10, 10], // Reduced padding from 30 to 10
+        margin: [10, 10],
         duration: 1.5,
         animate: true,
-        maxZoom: 20 // Increased max zoom from 17 to 18
+        maxZoom: 20
     });
 
+    // Add reset button if needed
     let resetButton = document.querySelector('#reset-bounds-button');
     if (!resetButton) {
         resetButton = document.createElement('button');
@@ -824,7 +795,6 @@ function viewSelectedPOIs() {
         resetButton.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Reset View';
         resetButton.onclick = () => {
             markers.forEach(marker => marker.setOpacity(1));
-            // boundaryRectangle.setStyle({ opacity: 1, fillOpacity: 0.1 });
             if (currentSelectedBounds) {
                 map.removeLayer(currentSelectedBounds);
                 currentSelectedBounds = null;
@@ -835,30 +805,27 @@ function viewSelectedPOIs() {
         document.querySelector('#map').appendChild(resetButton);
     }
 
+    // Add screenshot button
     let captureButton = document.createElement('button');
     captureButton.className = 'btn btn-info position-absolute m-2';
     captureButton.style.zIndex = '1000';
-    captureButton.style.right = '150px'; // Increase from 120px to 150px for better spacing
+    captureButton.style.right = '150px';
     captureButton.style.top = '10px';
     captureButton.innerHTML = '<i class="bi bi-camera"></i> Capture Map';
     captureButton.onclick = function(e) {
-        // Prevent the click event from reaching the map
         e.stopPropagation();
         e.preventDefault();
-        
-        // Call the capture function
         captureSelectedArea();
     };
     document.querySelector('#map').appendChild(captureButton);
 }
 
-// handle the view selected POIs button visibility
+// Toggle view selected button based on checkbox state
 function handleViewSelectedButton() {
     const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
     let viewSelectedButton = document.querySelector('#view-selected-button');
     
     if (checkedBoxes.length > 0) {
-        // create button if it doesn't exist
         if (!viewSelectedButton) {
             viewSelectedButton = document.createElement('button');
             viewSelectedButton.id = 'view-selected-button';
@@ -868,21 +835,20 @@ function handleViewSelectedButton() {
             document.querySelector('.controls').prepend(viewSelectedButton);
         }
     } else {
-        // remove button if no checkboxes are selected
         if (viewSelectedButton) {
             viewSelectedButton.remove();
         }
     }
 }
 
-// capture a screenshot of view selected POIs rectangle
+// Capture screenshot of selected area
 function captureSelectedArea() {
     if (!currentSelectedBounds) {
         showToast("Please select POIs first");
         return;
     }
     
-    // create overlay to block map interactions during capture
+    // Create overlay to prevent interactions during capture
     const mapOverlay = document.createElement('div');
     mapOverlay.style.position = 'absolute';
     mapOverlay.style.top = '0';
@@ -895,14 +861,14 @@ function captureSelectedArea() {
     
     showToast("Preparing map for screenshot...");
     
-    // collect selected POIs coordinates
+    // Collect POI data
     const checkedBoxes = document.querySelectorAll('.poi-checkbox:checked');
     const selectedPOIs = Array.from(checkedBoxes).map(checkbox => ({
         lat: parseFloat(checkbox.dataset.lat),
         lng: parseFloat(checkbox.dataset.lng)
     }));
     
-    // bounds corners
+    // Get bounds information
     const bounds = currentSelectedBounds.getBounds();
     const corners = {
         northEast: {
@@ -915,44 +881,40 @@ function captureSelectedArea() {
         }
     };
     
-    // First, ensure map is properly positioned to the selected area
+    // Position map for screenshot
     map.fitBounds(bounds, {
         padding: [50, 50],
         maxZoom: 15,
         duration: 0.5
     });
     
-    // Wait for map rendering to complete
+    // Wait for rendering to complete
     setTimeout(() => {
         showToast("Capturing map...");
         
-        // Close any open popups (like pressing ESC key)
         map.closePopup();
         
-        // temporarily hide the green rectangle before capture
+        // Hide UI elements during capture
         const originalStyle = currentSelectedBounds.options;
         currentSelectedBounds.setStyle({
             opacity: 0,
             fillOpacity: 0
         });
         
-        // Hide UI controls that shouldn't be in the screenshot
         const resetButton = document.querySelector('#reset-bounds-button');
-        const captureButton = document.querySelector('.btn-info'); // Capture button
+        const captureButton = document.querySelector('.btn-info');
         const mapControls = document.querySelector('.leaflet-control-container');
         
-        // Hide all Leaflet popups and tooltip elements
         const popups = document.querySelectorAll('.leaflet-popup, .leaflet-tooltip');
         popups.forEach(popup => {
             popup.style.display = 'none';
         });
         
-        // Hide UI elements properly
         if (resetButton) resetButton.style.display = 'none';
         if (captureButton) captureButton.style.display = 'none';
         if (mapControls) mapControls.style.display = 'none';
         
-        // capture the map
+        // Generate screenshot
         html2canvas(document.getElementById('map'), {
             useCORS: true,
             allowTaint: true,
@@ -960,10 +922,9 @@ function captureSelectedArea() {
             scale: window.devicePixelRatio || 2,
             backgroundColor: null
         }).then(function(canvas) {
-            // get the image data URL
             const imageData = canvas.toDataURL('image/png');
             
-            // Send to server with POI coordinates and bounds
+            // Send to server
             fetch("/save-screenshot", {
                 method: 'POST',
                 headers: {
@@ -993,20 +954,17 @@ function captureSelectedArea() {
                 showToast("Failed to save screenshot on server");
             })
             .finally(() => {
-                // Restore the green rectangle's visibility
+                // Restore UI elements
                 currentSelectedBounds.setStyle(originalStyle);
                 
-                // Restore UI controls
                 if (resetButton) resetButton.style.display = '';
                 if (captureButton) captureButton.style.display = '';
                 if (mapControls) mapControls.style.display = '';
                 
-                // Restore popup visibility
                 popups.forEach(popup => {
                     popup.style.display = '';
                 });
                 
-                // Remove the interaction blocker
                 if (mapOverlay && mapOverlay.parentNode) {
                     mapOverlay.parentNode.removeChild(mapOverlay);
                 }
@@ -1015,30 +973,27 @@ function captureSelectedArea() {
             console.error("Screenshot error:", error);
             showToast("Failed to capture screenshot");
             
-            // Restore the green rectangle's visibility
+            // Restore UI elements
             currentSelectedBounds.setStyle(originalStyle);
             
-            // Restore UI controls
             if (resetButton) resetButton.style.display = '';
             if (captureButton) captureButton.style.display = '';
             if (mapControls) mapControls.style.display = '';
             
-            // Restore popup visibility
             popups.forEach(popup => {
                 popup.style.display = '';
             });
             
-            // Remove the interaction blocker
             if (mapOverlay && mapOverlay.parentNode) {
                 mapOverlay.parentNode.removeChild(mapOverlay);
             }
         });
-    }, 1000); // wait 1 second for map rendering to complete
+    }, 1000);
 }
 
 
 
-// Make items clickable to focus on map
+// Enable POI list item clicks to focus map
 document.getElementById('poi-list').addEventListener('click', function(e) {
     const poiItem = e.target.closest('.poi-item');
     if (poiItem && !e.target.closest('button')) {
@@ -1056,7 +1011,7 @@ document.getElementById('poi-list').addEventListener('click', function(e) {
 });
 
 
-// search bar
+// Initialize search and filtering functionality
 function initializeSearch() {
     const searchInput = document.getElementById('location-search');
     const filterBtn = document.getElementById('filterButton');
@@ -1064,51 +1019,43 @@ function initializeSearch() {
     let currentCategory = 'all';
     let currentTime = 'all';
 
-    // Toggle dropdown
+    // Toggle filter dropdown
     filterBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         dropdown.classList.toggle('show');
     });
 
-    // Close dropdown when clicking outside
+    // Close dropdown on outside click
     document.addEventListener('click', function(e) {
         if (!dropdown.contains(e.target) && !filterBtn.contains(e.target)) {
             dropdown.classList.remove('show');
         }
     });
 
-    // Category selection
+    // Handle category selection
     document.querySelectorAll('.category-item').forEach(item => {
         item.addEventListener('click', function(e) {
             e.stopPropagation();
             
-            // Update active state
             document.querySelectorAll('.category-item').forEach(i => 
                 i.classList.remove('active'));
             this.classList.add('active');
             
-            // Update current category
             currentCategory = this.dataset.category;
-            
-            // Trigger search with current filters
             filterItems(searchInput.value.toLowerCase().trim(), currentCategory, currentTime);
         });
     });
 
-    // Time selection
+    // Handle time range selection
     document.querySelectorAll('.time-item').forEach(item => {
         item.addEventListener('click', function(e) {
             e.stopPropagation();
             
-            // Update active state
             document.querySelectorAll('.time-item').forEach(i => 
                 i.classList.remove('active'));
             this.classList.add('active');
             
-            // Update current time filter
             currentTime = this.dataset.time;
-            
-            // Trigger search with current filters
             filterItems(searchInput.value.toLowerCase().trim(), currentCategory, currentTime);
         });
     });
@@ -1119,6 +1066,7 @@ function initializeSearch() {
     });
 }
 
+// Filter POI items based on search criteria
 function filterItems(searchTerm, category, time) {
     const poiItems = document.querySelectorAll('#poi-list .poi-item');
 
@@ -1126,7 +1074,6 @@ function filterItems(searchTerm, category, time) {
         const nameElement = item.querySelector('strong');
         const categoryElement = item.querySelector('small');
         
-        // Find the corresponding marker for this POI
         const marker = markers.find(m => {
             const itemName = nameElement?.textContent;
             return m.getPopup().getContent().includes(itemName);
@@ -1136,13 +1083,12 @@ function filterItems(searchTerm, category, time) {
             const name = nameElement.textContent.toLowerCase();
             const itemCategory = categoryElement.textContent.toLowerCase();
             
-            // Extract the actual travel time from the marker's popup content
+            // Extract travel time from popup
             const popupContent = marker.getPopup().getContent();
             const parser = new DOMParser();
             const doc = parser.parseFromString(popupContent, 'text/html');
             const travelTimeBtn = doc.querySelector('.travel-time-btn');
             
-            // Extract time from the button text which contains "(X min)"
             const timeMatch = travelTimeBtn.textContent.match(/\((\d+) min\)/);
             const actualTravelTime = timeMatch ? parseInt(timeMatch[1]) : 0;
 
@@ -1150,7 +1096,7 @@ function filterItems(searchTerm, category, time) {
             const matchesCategory = category === 'all' || 
                                   itemCategory.includes(category.toLowerCase());
             
-            // Time range matching using actual travel time from the POI
+            // Match time range criteria
             let matchesTime = time === 'all';
             if (!matchesTime && actualTravelTime > 0) {
                 switch(time) {
@@ -1173,7 +1119,7 @@ function filterItems(searchTerm, category, time) {
                 }
             }
 
-            // Apply filtering and visual effects
+            // Apply visual filtering effects
             item.style.transition = 'all 0.3s ease';
 
             const shouldShow = (searchTerm === '' || matchesSearch) && 
@@ -1194,7 +1140,7 @@ function filterItems(searchTerm, category, time) {
     });
 }
 
-// Add this function before refreshSavedLocations
+// Add POI to sidebar list
 function addToSidebar(poi) {
     const item = document.createElement('div');
     item.className = 'poi-item';
@@ -1214,11 +1160,11 @@ function addToSidebar(poi) {
         </div>
     `;
 
-    // Add event listeners to the new item
+    // Set up event handlers
     const checkbox = item.querySelector('.poi-checkbox');
     checkbox.addEventListener('change', handleViewSelectedButton);
 
-    // Delete button
+    // Delete button handler
     item.querySelector('.btn-delete').addEventListener('click', async () => {
         try {
             const response = await fetch(`/api/pois/${poi.id}`, {
@@ -1226,10 +1172,8 @@ function addToSidebar(poi) {
             });
             
             if (response.ok) {
-                // Remove from UI
                 item.remove();
                 
-                // Remove marker from map
                 const marker = markers.find(m => m.getLatLng().lat === poi.latitude && m.getLatLng().lng === poi.longitude);
                 if (marker) map.removeLayer(marker);
                 
@@ -1243,7 +1187,7 @@ function addToSidebar(poi) {
         }
     });
 
-    // Edit button
+    // Edit button handler
     item.querySelector('.btn-edit').addEventListener('click', () => {
         document.getElementById('poi-name').value = poi.name;
         document.getElementById('poi-category').value = poi.category || 'Restaurant';
@@ -1251,27 +1195,23 @@ function addToSidebar(poi) {
         document.getElementById('poi-latitude').value = poi.latitude;
         document.getElementById('poi-longitude').value = poi.longitude;
 
-        // Mark as editing
         editingItem = poi.id;
 
-        // Show on map
         const editMarker = L.marker([poi.latitude, poi.longitude]).addTo(map)
             .bindPopup("Editing location").openPopup();
             
         if (selectedMarker) map.removeLayer(selectedMarker);
         selectedMarker = editMarker;
         
-        // Update submit button to indicate editing
         const submitBtn = document.querySelector('#poi-form button[type="submit"]');
         submitBtn.innerHTML = '<i class="bi bi-check-lg me-2"></i>Update Location';
     });
 
-    // Click to view on map
+    // Item click handler for map focus
     item.addEventListener('click', (e) => {
         if (!e.target.closest('button') && !e.target.closest('input')) {
             map.setView([poi.latitude, poi.longitude], 16);
             
-            // Find the marker for this POI
             const marker = markers.find(m => 
                 m.getLatLng().lat === poi.latitude && 
                 m.getLatLng().lng === poi.longitude

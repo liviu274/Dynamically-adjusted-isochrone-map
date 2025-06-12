@@ -15,6 +15,7 @@ def get_isochrones(origin_lat, origin_lng, travel_times=[5, 10, 15], travel_mode
     Returns:
         dict: GeoJSON formatted isochrones or error message
     """
+    # Get API key from application configuration
     api_key = current_app.config.get('TRAVEL_TIME_API_KEY')
     
     if not api_key:
@@ -40,7 +41,6 @@ def get_isochrones(origin_lat, origin_lng, travel_times=[5, 10, 15], travel_mode
         "attributes": ["total_pop"],
         "location_type": "start",
         "range_type": "time"
-        # Removed "options": {"traffic": "true"} as it's not supported
     }
     
     try:

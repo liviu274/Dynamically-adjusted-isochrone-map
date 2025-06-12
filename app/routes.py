@@ -15,15 +15,15 @@ def index():
 
 @main.route('/api/isochrones', methods=['POST'])
 def isochrones_proxy():
-    """Proxy endpoint for OpenRouteService isochrones API to avoid CORS issues"""
+    """Forward requests to OpenRouteService isochrones API"""
     try:
-        # Get the API key from environment or config (more secure)
+        # API key should ideally be in environment variables
         api_key = '5b3ce3597851110001cf6248e0fbfa8c07af43458da778a226442451'
         
-        # Forward the request body from the client
+        # Parse client request
         data = request.json
         
-        # Make the request to OpenRouteService API
+        # Forward to external API
         response = requests.post(
             'https://api.openrouteservice.org/v2/isochrones/driving-car',
             json=data,
@@ -34,9 +34,9 @@ def isochrones_proxy():
             }
         )
         
-        # Return the API response to the client
+        # Return API response to client
         return response.json(), response.status_code
         
     except requests.exceptions.RequestException as e:
         return jsonify({"error": str(e)}), 500
-    
+

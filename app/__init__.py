@@ -5,25 +5,23 @@ from flask_cors import CORS
 from .config import Config
 import os
 
-# Initialize extensions
+# Initialize extensions before creating app instance
 db = SQLAlchemy()
 migrate = Migrate()
 
 def create_app(config_class=Config):
+    # Create and configure Flask application
     app = Flask(__name__)
     app.config.from_object(config_class)
     
-    # Initialize extensions with app
+    # Initialize extensions with app instance
     db.init_app(app)
     migrate.init_app(app, db)
     CORS(app)
     
-    # Create necessary directories
+    # Ensure required directories exist
     os.makedirs(os.path.join(app.root_path, 'static', 'map_screenshots'), exist_ok=True)
     os.makedirs(os.path.join(app.root_path, 'locals', 'map_screenshots'), exist_ok=True)
-    
-    # REMOVED: No automatic copying from locals to static
-    # Let the serve_map_image endpoint handle this on-demand
     
     # Register blueprints
     from app.routes.main import main_bp

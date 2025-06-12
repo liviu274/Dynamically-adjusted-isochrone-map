@@ -28,11 +28,10 @@ class MapDeformer:
         """Get matrix of travel times between POIs using OpenRouteService API"""
         url = "https://api.openrouteservice.org/v2/matrix/driving-car"
         
-        # Since we're not sure how the API key is stored, handle both formats
         if not self.api_key:
             raise ValueError("API key is required for travel time matrix calculation")
             
-        # Format the API key consistently - use Bearer prefix
+        # Format API key with Bearer prefix if needed
         auth_header = self.api_key
         if not self.api_key.startswith('Bearer '):
             auth_header = f'Bearer {self.api_key}'
@@ -47,7 +46,7 @@ class MapDeformer:
         print(f"Making API request to {url}")
         print(f"Headers: {headers}")
         
-        # Convert POIs to the format required by ORS (lng, lat)
+        # Convert POIs to format required by ORS (lng, lat)
         locations = [[poi['lng'], poi['lat']] for poi in pois]
         
         body = {
@@ -449,10 +448,7 @@ class MapDeformer:
                 draw.text((src_x - text_width/2, src_y - text_height/2), 
                          num_text, fill=(255, 255, 255), font=small_font)
                 
-                # NO POI labels (as per user request)
-        
             # TIME-BASED VISUALIZATION (RIGHT PANEL)
-            # -------------------------------------
             time_panel_offset = width + 50  # Starting X position for time panel
                 
             # Draw time-based connections with proper deformation
@@ -529,7 +525,7 @@ class MapDeformer:
                 except Exception as coord_error:
                     print(f"Time coordinate error: {coord_error}")
                     
-            # Draw time-based POIs with numbers only (no labels)
+            # Draw time-based POIs with numbers
             for i in range(num_pois):
                 try:
                     # Offset X coordinate to right panel
@@ -553,7 +549,6 @@ class MapDeformer:
                     print(f"Time POI error: {poi_error}")
         
         except Exception as e:
-            print("===== VISUALIZATION ERROR =====")
             print(f"Error during visualization creation: {e}")
             traceback.print_exc()
             draw.text((20, 20), f"Visualization error: {str(e)}", fill=(255, 50, 50))

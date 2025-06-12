@@ -1,1 +1,1 @@
-# This file should be empty or just contain imports
+# This file should be empty
